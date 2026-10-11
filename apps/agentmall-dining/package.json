@@ -5,11 +5,22 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/server.ts",
-    "selfcheck": "bun run --cwd ../../packages/ocp-schema build && bun test src/selfcheck.test.ts",
+    "selfcheck": "AGENTMALL_DATA_MODE=mock bun test src/selfcheck.test.ts",
     "mcp:probe": "bun run src/mcp-probe.ts",
-    "demo": "bun run src/demo.ts",
-    "typecheck": "tsc --noEmit"
+    "demo": "AGENTMALL_DATA_MODE=mock bun run src/demo.ts",
+    "typecheck": "bun run prepare:types && tsc --noEmit",
+    "mcp": "bun run src/mcp-check.ts",
+    "smoke": "PORT=4401 bun run src/smoke.ts",
+    "prepare:types": "bun run --cwd ../../packages/ocp-schema build && bun run --cwd ../../packages/registration-schema build && bun run --cwd ../../packages/ocp-activity-schema build && bun run --cwd ../../packages/ocp-client build"
   },
-  "dependencies": { "@ocp-catalog/ocp-schema": "workspace:*" },
-  "devDependencies": { "@types/bun": "^1.3.12", "typescript": "^5.9.3" }
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@ocp-catalog/ocp-client": "workspace:*",
+    "@ocp-catalog/ocp-schema": "workspace:*",
+    "ajv": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12",
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,23 +1,12 @@
-/**
- * A minimal, spec-valid OCP Catalog Node in TypeScript.
- *
- * Serves five endpoints from ~3 in-memory products, with no database, no
- * vendor client, and no auth. It is the smallest thing that answers the OCP
- * Catalog read surface:
- *
- *   GET  /.well-known/ocp-catalog   discovery
- *   GET  /ocp/manifest              capabilities
- *   GET  /ocp/health                liveness
- *   GET  /ocp/contracts             object contracts (empty — read-only node)
- *   POST /ocp/query                 keyword search over products
- *   POST /ocp/resolve               resolve one entry into actions
- *
- * The response shapes match @ocp-catalog/ocp-schema; see server.test.ts, which
- * parses every response through those schemas to prove conformance.
+/** OCP Catalog adapted from the official TypeScript example.
+ * Merchant reads are outside the protocol implementation; checkout stays simulated.
  */
 import { PRODUCTS, type Product } from './products';
 import { page } from './page';
-import { catalogQueryRequestSchema, resolveRequestSchema } from '@ocp-catalog/ocp-schema';
+import { catalogManifestSchema, catalogQueryRequestSchema, resolveRequestSchema, type CatalogQueryRequest } from '@ocp-catalog/ocp-schema';
+
+import { validateCatalogQueryRequest } from '@ocp-catalog/ocp-client';
+import { providerProducts, LIVE_TTL_MS } from './providers';
 
 const CATALOG_ID = process.env.CATALOG_ID ?? 'cat_agentmall_dining';
 const CATALOG_NAME = process.env.CATALOG_NAME ?? 'AgentMall Dining Catalog';
@@ -27,6 +16,7 @@ const BASE_URL = (process.env.PUBLIC_BASE_URL ?? `http://localhost:${PORT}`).rep
 const checkoutTickets = new Map<string, { entry_id: string; expires: number }>();
 
 const entryId = (product: Product) => `entry_${product.provider_id}_${product.id}`;
+const resolvedProducts = new Map(PRODUCTS.map(product => [entryId(product), product]));
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,7 +46,7 @@ function manifest() {
     id: `manifest_${CATALOG_ID}`,
     catalog_id: CATALOG_ID,
     catalog_name: CATALOG_NAME,
-    description: 'Three-merchant mock dining catalog; illustrative products and prices.',
+    description: 'Dining catalog with read-only LIVE merchant data and clearly labeled MOCK fallback.',
     registry_visibility: 'public',
     endpoints: {
       health: { url: `${BASE_URL}/ocp/health`, method: 'GET' },
@@ -66,15 +56,19 @@ function manifest() {
     },
     query_capabilities: [
       {
-        capability_id: 'ocp.example.product.search.v1',
+        capability_id: 'ocp.agentmall.product.search.v1',
         name: 'Keyword product search',
-        description: 'Case-insensitive keyword match over the in-memory product list.',
+        description: 'Keyword search and provider/budget filtering over merchant products.',
         query_packs: [
           {
             pack_id: 'ocp.query.keyword.v1',
             description: 'Keyword search over title, summary, brand, and category.',
-            query_modes: ['keyword'],
+            query_modes: ['keyword', 'filter', 'hybrid'],
           },
+        ],
+        input_fields: [
+          { name: 'filters.provider_id', type: 'string', description: 'luckin, mcdonalds or kfc' },
+          { name: 'filters.max_amount', type: 'number', description: 'Maximum CNY merchant estimate or mock price' },
         ],
         supports_explain: true,
         supports_resolve: true,
@@ -123,14 +117,24 @@ function toEntry(product: Product) {
       inventory: { availability_status: product.availability },
       product_url: product.url,
       source: product.source,
+      store: product.store,
+      price_basis: product.price_basis ?? 'mock_fixture',
+      source_reason: product.source_reason,
+      retrieved_at: product.updated_at,
+      transaction_source: 'MOCK',
     },
   };
 }
 
-function query(body: { query?: string; limit?: number; filters?: { provider_id?: string; max_amount?: number } }) {
+async function query(body: CatalogQueryRequest, policy: ReturnType<typeof validateCatalogQueryRequest>['policy_summary']) {
   const term = (body.query ?? '').trim().toLowerCase();
   const limit = Math.min(Math.max(body.limit ?? 20, 1), 50);
-  const matches = PRODUCTS.filter((p) =>
+  const providers = (['luckin', 'mcdonalds', 'kfc'] as const).filter(provider => !body.filters?.provider_id || body.filters.provider_id === provider);
+  const groups = await Promise.all(providers.map(provider => providerProducts(provider, term)));
+  const products = groups.flat();
+  for (const product of products) resolvedProducts.set(entryId(product), product);
+  for (const [id, product] of resolvedProducts) if (product.source === 'LIVE' && Date.parse(product.updated_at) + LIVE_TTL_MS < Date.now()) resolvedProducts.delete(id);
+  const matches = products.filter((p) =>
     (!body.filters?.provider_id || p.provider_id === body.filters.provider_id) &&
     (body.filters?.max_amount === undefined || p.amount <= body.filters.max_amount) &&
     (!term || [p.title, p.summary, p.brand, p.category].some((f) => f.toLowerCase().includes(term)))
@@ -142,10 +146,11 @@ function query(body: { query?: string; limit?: number; filters?: { provider_id?:
     id: `qry_${crypto.randomUUID()}`,
     catalog_id: CATALOG_ID,
     query_pack: 'ocp.query.keyword.v1',
-    query_mode: 'keyword',
+    query_mode: policy.query_mode,
+    policy_summary: policy,
     query: body.query ?? '',
     result_count: page.length,
-    page: { limit, offset: 0, has_more: false },
+    page: { limit, offset: 0, has_more: matches.length > limit },
     entries: page.map((product) => ({
       entry: toEntry(product),
       score: 1,
@@ -155,18 +160,21 @@ function query(body: { query?: string; limit?: number; filters?: { provider_id?:
 }
 
 function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
-  const product = PRODUCTS.find((p) => entryId(p) === body.entry_id);
+  const product = resolvedProducts.get(body.entry_id ?? '');
   if (!product) {
     return json(
       { error: { code: 'not_found', message: `Unknown entry_id: ${body.entry_id ?? '(missing)'}` } },
       404,
     );
   }
+  if (product.source === 'LIVE' && Date.parse(product.updated_at) + LIVE_TTL_MS < Date.now()) return json({ error: { code: 'stale_entry', message: 'Merchant snapshot expired; query again' } }, 409);
   const now = new Date().toISOString();
-  const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const expiry = Math.min(Date.now() + 5 * 60 * 1000, product.source === 'LIVE' ? Date.parse(product.updated_at) + LIVE_TTL_MS : Infinity);
+  const expires = new Date(expiry).toISOString();
+  for (const [id, ticket] of checkoutTickets) if (ticket.expires < Date.now()) checkoutTickets.delete(id);
   const checkout = body.purpose === 'checkout';
   const resolutionId = `res_${crypto.randomUUID()}`;
-  if (checkout) checkoutTickets.set(resolutionId, { entry_id: entryId(product), expires: Date.now() + 5 * 60 * 1000 });
+  if (checkout) checkoutTickets.set(resolutionId, { entry_id: entryId(product), expires: expiry });
   return json({
     ocp_version: '1.0',
     kind: 'ResolvableReference',
@@ -184,19 +192,26 @@ function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
       price: { currency: product.currency, amount: product.amount },
       availability: product.availability,
       source: product.source,
+      store: product.store,
+      price_basis: product.price_basis ?? 'mock_fixture',
+      source_reason: product.source_reason,
+      retrieved_at: product.updated_at,
+      transaction_source: 'MOCK',
     },
     action_bindings: [
       {
         action_id: checkout ? 'mock-checkout' : 'view',
         action_type: checkout ? 'api' : 'url',
-        label: checkout ? 'Confirm simulated order' : 'View mock product',
-        entrypoint: checkout ? { url: `${BASE_URL}/mock/checkout`, method: 'POST' } : { url: product.url, method: 'GET' },
+        label: checkout ? 'Confirm simulated order' : 'View retrieved product snapshot',
+        entrypoint: checkout ? { url: `${BASE_URL}/mock/checkout`, method: 'POST' } : { url: `${BASE_URL}/products/${encodeURIComponent(entryId(product))}`, method: 'GET' },
         requires_user_confirmation: checkout,
         expires_at: expires,
       },
     ],
+    access: { visibility: 'public', permission_state: 'granted', redacted_fields: [], policy_notes: ['Checkout always simulates an order; no real purchase.', 'Resolve uses the retrieved snapshot; no fresh quote or availability check.'] },
+    live_checks: [{ check_id: 'snapshot-only', status: 'not_applicable', checked_at: now, summary: 'Read-only snapshot; availability and final order price are unverified' }],
     freshness: { object_updated_at: product.updated_at, resolved_at: now },
-    // Resolutions are short-lived; expire in one hour.
+    // Action expires after five minutes; LIVE snapshots must also remain fresh.
     expires_at: expires,
   });
 }
@@ -204,9 +219,9 @@ function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
     const parsed = await request.json();
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null as any;
   } catch {
-    return {};
+    return null as any;
   }
 }
 
@@ -215,10 +230,15 @@ export async function handle(request: Request): Promise<Response> {
   const { method } = request;
 
   if (method === 'GET' && pathname === '/') return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  if (method === 'GET' && pathname.startsWith('/products/')) {
+    const product = resolvedProducts.get(decodeURIComponent(pathname.slice('/products/'.length)));
+    if (!product) return json({ error: { code: 'not_found', message: 'Unknown product' } }, 404);
+    return json(toEntry(product));
+  }
   if (method === 'POST' && pathname === '/mock/checkout') {
     const body = await readJson(request);
-    const ticket = checkoutTickets.get(String(body.resolution_id ?? ''));
-    if (!ticket || ticket.entry_id !== body.entry_id || ticket.expires < Date.now() || body.confirmed !== true) return json({ error: { code: 'invalid_confirmation', message: 'Valid checkout resolution and explicit confirmation required' } }, 400);
+    const ticket = checkoutTickets.get(String(body?.resolution_id ?? ''));
+    if (!ticket || ticket.entry_id !== body?.entry_id || ticket.expires < Date.now() || body?.confirmed !== true) return json({ error: { code: 'invalid_confirmation', message: 'Valid checkout resolution and explicit confirmation required' } }, 400);
     checkoutTickets.delete(String(body.resolution_id));
     return json({ status: 'MOCK', mock_order_id: `MOCK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, charged: false });
   }
@@ -230,9 +250,15 @@ export async function handle(request: Request): Promise<Response> {
     const parsed = catalogQueryRequestSchema.safeParse(await readJson(request));
     if (!parsed.success) return json({ error: { code: 'invalid_query', message: 'Invalid OCP query request' } }, 400);
     if (parsed.data.query_pack && parsed.data.query_pack !== 'ocp.query.keyword.v1') return json({ error: { code: 'unsupported_query_pack', message: 'Query pack is not declared in manifest' } }, 400);
-    if (parsed.data.query_mode && parsed.data.query_mode !== 'keyword') return json({ error: { code: 'unsupported_query_mode', message: 'Query mode is not declared in manifest' } }, 400);
+
     if (parsed.data.catalog_id && parsed.data.catalog_id !== CATALOG_ID) return json({ error: { code: 'invalid_catalog', message: 'Unknown catalog_id' } }, 400);
-    return json(query(parsed.data));
+    if (parsed.data.cursor) return json({ error: { code: 'unsupported_cursor', message: 'Pagination cursor not supported in this MVP' } }, 400);
+    try {
+      const validated = validateCatalogQueryRequest(catalogManifestSchema.parse(manifest()), parsed.data);
+      return json(await query(validated.request, validated.policy_summary));
+    } catch {
+      return json({ error: { code: 'invalid_query_capability', message: 'Query mode or filters are not declared by this manifest' } }, 400);
+    }
   }
   if (method === 'POST' && pathname === '/ocp/resolve') {
     const parsed = resolveRequestSchema.safeParse(await readJson(request));

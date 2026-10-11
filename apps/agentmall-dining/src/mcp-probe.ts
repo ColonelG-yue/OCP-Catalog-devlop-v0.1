@@ -1,43 +1,88 @@
-/** Read-only MCP capability probe. No token is printed or persisted. */
+import Ajv from 'ajv';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
+export type Merchant = 'luckin' | 'mcdonalds';
 const SERVICES = {
   luckin: { url: 'https://gwmcp.lkcoffee.com/order/user/mcp', env: 'LUCKIN_MCP_TOKEN' },
   mcdonalds: { url: 'https://mcp.mcd.cn', env: 'MCD_MCP_TOKEN' },
 } as const;
 
-async function rpc(url: string, token: string, method: string, session?: string) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      ...(session ? { 'mcp-session-id': session } : {}),
-    },
-    body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method,
-      ...(method === 'initialize' ? { params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'agentmall-dining-readonly', version: '0.1.0' } } } : {}) }),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const raw = await response.text();
-  const data = raw.startsWith('data:') ? JSON.parse(raw.split('\n').find(line => line.startsWith('data:'))!.slice(5)) : JSON.parse(raw);
-  if (data.error) throw new Error(`MCP error ${data.error.code}`);
-  return { data, session: response.headers.get('mcp-session-id') ?? session };
-}
-
-export async function probe(name: keyof typeof SERVICES) {
+export async function withMcp<T>(name: Merchant, work: (client: Client) => Promise<T>): Promise<T> {
   const service = SERVICES[name];
   const token = process.env[service.env];
-  if (!token) return { service: name, status: 'UNAVAILABLE', reason: `${service.env} absent` };
+  if (!token) throw new Error(`${service.env} unavailable`);
+  const client = new Client({ name: 'agentmall-dining-readonly', version: '0.1.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(service.url), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  // Keep SDK/transport errors out of logs because they may contain request context.
+  client.onerror = () => {};
   try {
-    const init = await rpc(service.url, token, 'initialize');
-    const list = await rpc(service.url, token, 'tools/list', init.session ?? undefined);
-    const names = (list.data.result?.tools ?? []).map((tool: { name: string }) => tool.name);
-    return { service: name, status: 'CONNECTED', tools: names };
-  } catch (error) {
-    return { service: name, status: 'UNAVAILABLE', reason: String(error).replace(token, '[REDACTED]') };
+    await client.connect(transport, { timeout: 10000 });
+    return await work(client);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
+export async function probe(name: Merchant) {
+  try {
+    const tools = await withMcp(name, async client => {
+      const result = await client.listTools(undefined, { timeout: 10000 });
+      return result.tools.map(({ name, inputSchema }) => ({ name, inputSchema }));
+    });
+    await Bun.write(new URL(`../docs/${name}-tools.json`, import.meta.url), JSON.stringify({ checked_at: new Date().toISOString(), tools }, null, 2));
+    return { service: name, status: 'CONNECTED', tool_names: tools.map(tool => tool.name) };
+  } catch {
+    return { service: name, status: 'UNAVAILABLE', reason: 'Connection or tools/list failed; credentials and errors withheld' };
   }
 }
 
 if (import.meta.main) {
   for (const name of ['luckin', 'mcdonalds'] as const) console.log(JSON.stringify(await probe(name)));
+}
+
+// Extract JSON data from text blocks without interpreting surrounding merchant instructions.
+export function decodeToolResult(input: unknown): any {
+  if (!input || typeof input !== 'object') throw new Error('Invalid merchant result');
+  const result = input as { structuredContent?: unknown; content?: unknown; isError?: boolean };
+  if (result.isError) throw new Error('Merchant tool rejected request');
+  if (result.structuredContent) return result.structuredContent;
+  for (const block of (result.content ?? []) as { type: string; text?: string }[]) {
+    if (block.type !== 'text' || !block.text) continue;
+    const text = block.text;
+    for (let start = 0; start < text.length; start++) {
+      if (text[start] !== '{' && text[start] !== '[') continue;
+      let depth = 0, quoted = false, escape = false;
+      for (let end = start; end < text.length; end++) {
+        const c = text[end];
+        if (quoted) { if (escape) escape = false; else if (c === '\\') escape = true; else if (c === '"') quoted = false; continue; }
+        if (c === '"') quoted = true;
+        else if (c === '{' || c === '[') depth++;
+        else if (c === '}' || c === ']') depth--;
+        if (depth === 0) {
+          try { const parsed = JSON.parse(text.slice(start, end + 1)); if (parsed && (parsed.data !== undefined || (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object'))) return parsed; } catch {}
+          break;
+        }
+      }
+    }
+  }
+  throw new Error('No structured merchant data');
+}
+
+
+const READ_TOOLS: Record<Merchant, readonly string[]> = {
+  luckin: ['queryShopList', 'searchProductForMcp', 'queryProductDetailInfo'],
+  mcdonalds: ['query-nearby-stores', 'query-meals', 'query-meal-detail'],
+};
+export async function callReadTool(client: Client, merchant: Merchant, name: string, args: Record<string, unknown>, tools: Awaited<ReturnType<Client['listTools']>>['tools']) {
+  if (!READ_TOOLS[merchant].includes(name)) throw new Error('Tool is outside the read-only allowlist');
+  const tool = tools.find(tool => tool.name === name);
+  if (!tool) throw new Error('Tool not advertised by merchant');
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  if (!ajv.validate(tool.inputSchema, args)) throw new Error('Arguments do not match merchant input schema');
+  const data = decodeToolResult(await client.callTool({ name, arguments: args }, undefined, { timeout: 10000 }));
+  if (data.success === false || (typeof data.code === 'number' && ![0, 200].includes(data.code))) throw new Error('Merchant data unavailable');
+  return data;
 }

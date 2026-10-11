@@ -1,0 +1,44 @@
+{
+  "checked_at": "2026-10-11T07:29:10.197Z",
+  "merchant": "mcdonalds",
+  "status": "LIVE_READ_VERIFIED",
+  "product_count": 123,
+  "examples": [
+    {
+      "id": "3330489-1100",
+      "title": "巨无霸",
+      "amount": 26.5,
+      "currency": "CNY",
+      "store": {
+        "id": "3330489",
+        "name": "麦当劳杭州拱墅区茶叶大厦餐厅"
+      },
+      "price_basis": "currentPrice",
+      "retrieved_at": "2026-10-11T07:29:10.196Z"
+    },
+    {
+      "id": "3330489-1106",
+      "title": "培根蔬萃双层牛堡",
+      "amount": 25,
+      "currency": "CNY",
+      "store": {
+        "id": "3330489",
+        "name": "麦当劳杭州拱墅区茶叶大厦餐厅"
+      },
+      "price_basis": "currentPrice",
+      "retrieved_at": "2026-10-11T07:29:10.196Z"
+    },
+    {
+      "id": "3330489-1120",
+      "title": "双层吉士汉堡",
+      "amount": 22.5,
+      "currency": "CNY",
+      "store": {
+        "id": "3330489",
+        "name": "麦当劳杭州拱墅区茶叶大厦餐厅"
+      },
+      "price_basis": "currentPrice",
+      "retrieved_at": "2026-10-11T07:29:10.196Z"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "checked_at": "2026-10-11T07:31:43.625Z",
+  "evidence": [
+    {
+      "provider_id": "luckin",
+      "candidates": 2,
+      "source": "LIVE",
+      "title": "生椰拿铁（原创）",
+      "price": {
+        "currency": "CNY",
+        "amount": 20
+      },
+      "store": {
+        "id": "603072",
+        "name": "滨绿大厦A座负一楼店"
+      },
+      "transaction": "MOCK"
+    },
+    {
+      "provider_id": "mcdonalds",
+      "candidates": 20,
+      "source": "LIVE",
+      "title": "巨无霸",
+      "price": {
+        "currency": "CNY",
+        "amount": 26.5
+      },
+      "store": {
+        "id": "3330489",
+        "name": "麦当劳杭州拱墅区茶叶大厦餐厅"
+      },
+      "transaction": "MOCK"
+    },
+    {
+      "provider_id": "kfc",
+      "candidates": 1,
+      "source": "MOCK",
+      "title": "肯德基炸鸡（模拟）",
+      "price": {
+        "currency": "CNY",
+        "amount": 25
+      },
+      "transaction": "MOCK"
+    }
+  ],
+  "result": "PASS"
+}

@@ -1,8 +1,12 @@
 export type Product = {
   id: string; provider_id: 'luckin' | 'mcdonalds' | 'kfc'; title: string;
   summary: string; brand: string; category: string; currency: 'CNY';
-  amount: number; availability: 'unknown'; url: string; updated_at: string;
-  source: 'MOCK';
+  amount: number; availability: 'unknown'; url?: string; updated_at: string;
+  source: 'MOCK' | 'LIVE';
+  store?: { id: string; name: string };
+  price_basis?: string;
+  image_url?: string;
+  source_reason?: string;
 };
 
 // Synthetic fixtures for protocol demonstration. Prices are illustrative, not offers.
