@@ -17,6 +17,7 @@
  */
 import { PRODUCTS, type Product } from './products';
 import { page } from './page';
+import { catalogQueryRequestSchema, resolveRequestSchema } from '@ocp-catalog/ocp-schema';
 
 const CATALOG_ID = process.env.CATALOG_ID ?? 'cat_agentmall_dining';
 const CATALOG_NAME = process.env.CATALOG_NAME ?? 'AgentMall Dining Catalog';
@@ -225,8 +226,21 @@ export async function handle(request: Request): Promise<Response> {
   if (method === 'GET' && pathname === '/ocp/manifest') return json(manifest());
   if (method === 'GET' && pathname === '/ocp/health') return json(health());
   if (method === 'GET' && pathname === '/ocp/contracts') return json(contracts());
-  if (method === 'POST' && pathname === '/ocp/query') return json(query(await readJson(request)));
-  if (method === 'POST' && pathname === '/ocp/resolve') return resolve(await readJson(request));
+  if (method === 'POST' && pathname === '/ocp/query') {
+    const parsed = catalogQueryRequestSchema.safeParse(await readJson(request));
+    if (!parsed.success) return json({ error: { code: 'invalid_query', message: 'Invalid OCP query request' } }, 400);
+    if (parsed.data.query_pack && parsed.data.query_pack !== 'ocp.query.keyword.v1') return json({ error: { code: 'unsupported_query_pack', message: 'Query pack is not declared in manifest' } }, 400);
+    if (parsed.data.query_mode && parsed.data.query_mode !== 'keyword') return json({ error: { code: 'unsupported_query_mode', message: 'Query mode is not declared in manifest' } }, 400);
+    if (parsed.data.catalog_id && parsed.data.catalog_id !== CATALOG_ID) return json({ error: { code: 'invalid_catalog', message: 'Unknown catalog_id' } }, 400);
+    return json(query(parsed.data));
+  }
+  if (method === 'POST' && pathname === '/ocp/resolve') {
+    const parsed = resolveRequestSchema.safeParse(await readJson(request));
+    if (!parsed.success) return json({ error: { code: 'invalid_resolve', message: 'Invalid OCP resolve request' } }, 400);
+    if (parsed.data.catalog_id && parsed.data.catalog_id !== CATALOG_ID) return json({ error: { code: 'invalid_catalog', message: 'Unknown catalog_id' } }, 400);
+    if (!['view', 'checkout'].includes(parsed.data.purpose)) return json({ error: { code: 'unsupported_purpose', message: 'Purpose not supported by demo' } }, 400);
+    return resolve({ entry_id: parsed.data.entry_id, purpose: parsed.data.purpose as 'view' | 'checkout' });
+  }
 
   return json({ error: { code: 'not_found', message: `No route for ${method} ${pathname}` } }, 404);
 }
@@ -234,5 +248,5 @@ export async function handle(request: Request): Promise<Response> {
 // Start the server unless imported by a test.
 if (import.meta.main) {
   Bun.serve({ port: PORT, fetch: handle });
-  console.log(`Example TypeScript OCP Catalog Node listening on ${BASE_URL}`);
+  console.log(`AgentMall Dining OCP Catalog listening on ${BASE_URL}`);
 }

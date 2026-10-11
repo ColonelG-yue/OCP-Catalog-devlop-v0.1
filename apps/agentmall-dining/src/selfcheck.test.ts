@@ -29,3 +29,12 @@ test('all six OCP endpoints, three providers, purpose-specific actions', async (
     expect(Date.parse(checkout.expires_at)).toBeGreaterThan(Date.now());
   }
 });
+
+
+test('rejects unknown entry, invalid query and undeclared pack', async () => {
+  expect((await post('/ocp/resolve', { entry_id: 'missing', purpose: 'view' })).status).toBe(404);
+  expect((await post('/ocp/query', { query: '', unexpected: true })).status).toBe(400);
+  expect((await post('/ocp/query', { query_pack: 'ocp.query.unknown.v1', query: '' })).status).toBe(400);
+  expect((await post('/ocp/query', { query_mode: 'semantic', query: '' })).status).toBe(400);
+  expect((await post('/mock/checkout', { entry_id: 'entry_luckin_luckin-latte', confirmed: true })).status).toBe(400);
+});

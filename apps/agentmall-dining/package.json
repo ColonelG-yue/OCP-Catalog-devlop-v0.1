@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/server.ts",
-    "selfcheck": "bun test src/selfcheck.test.ts",
+    "selfcheck": "bun run --cwd ../../packages/ocp-schema build && bun test src/selfcheck.test.ts",
     "mcp:probe": "bun run src/mcp-probe.ts",
     "demo": "bun run src/demo.ts",
     "typecheck": "tsc --noEmit"
