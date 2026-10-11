@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun run src/server.ts",
-    "selfcheck": "AGENTMALL_DATA_MODE=mock bun test src/selfcheck.test.ts",
+    "start": "NODE_ENV=development AGENTMALL_ENABLE_REAL_ORDERS=0 bun run src/server.ts",
+    "selfcheck": "AGENTMALL_TEST_MODE=1 AGENTMALL_DATA_MODE=mock bun test src/selfcheck.test.ts src/real-checkout.test.ts",
     "mcp:probe": "bun run src/mcp-probe.ts",
-    "demo": "AGENTMALL_DATA_MODE=mock bun run src/demo.ts",
+    "demo": "AGENTMALL_TEST_MODE=1 AGENTMALL_DATA_MODE=mock bun run src/demo.ts",
     "typecheck": "bun run prepare:types && tsc --noEmit",
     "mcp": "bun run src/mcp-check.ts",
-    "smoke": "PORT=4401 bun run src/smoke.ts",
-    "prepare:types": "bun run --cwd ../../packages/ocp-schema build && bun run --cwd ../../packages/registration-schema build && bun run --cwd ../../packages/ocp-activity-schema build && bun run --cwd ../../packages/ocp-client build"
+    "smoke": "AGENTMALL_TEST_MODE=1 AGENTMALL_ENABLE_REAL_ORDERS=0 PORT=4401 bun run src/smoke.ts",
+    "prepare:types": "bun run --cwd ../../packages/ocp-schema build && bun run --cwd ../../packages/registration-schema build && bun run --cwd ../../packages/ocp-activity-schema build && bun run --cwd ../../packages/ocp-client build",
+    "start:real": "NODE_ENV=production AGENTMALL_ENABLE_REAL_ORDERS=1 bun run src/server.ts",
+    "open": "bun run src/open-browser.ts",
+    "preview": "AGENTMALL_ENABLE_REAL_ORDERS=0 bun run src/preview-check.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

@@ -3,7 +3,9 @@ export type Product = {
   summary: string; brand: string; category: string; currency: 'CNY';
   amount: number; availability: 'unknown'; url?: string; updated_at: string;
   source: 'MOCK' | 'LIVE';
-  store?: { id: string; name: string };
+  store?: { id: string; name: string; address?: string };
+  merchant_product_id?: number;
+  merchant_sku?: string;
   price_basis?: string;
   image_url?: string;
   source_reason?: string;

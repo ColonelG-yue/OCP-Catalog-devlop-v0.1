@@ -1,5 +1,5 @@
 /** OCP Catalog adapted from the official TypeScript example.
- * Merchant reads are outside the protocol implementation; checkout stays simulated.
+ * Merchant reads are outside the protocol implementation; real checkout is gated behind an authorized local browser workflow.
  */
 import { PRODUCTS, type Product } from './products';
 import { page } from './page';
@@ -7,11 +7,16 @@ import { catalogManifestSchema, catalogQueryRequestSchema, resolveRequestSchema,
 
 import { validateCatalogQueryRequest } from '@ocp-catalog/ocp-client';
 import { providerProducts, LIVE_TTL_MS } from './providers';
+import { RealRoutes, createRealRuntime } from './real-http';
+import { CheckoutError } from './real-checkout';
 
 const CATALOG_ID = process.env.CATALOG_ID ?? 'cat_agentmall_dining';
 const CATALOG_NAME = process.env.CATALOG_NAME ?? 'AgentMall Dining Catalog';
 const PORT = Number(process.env.PORT ?? 4400);
-const BASE_URL = (process.env.PUBLIC_BASE_URL ?? `http://localhost:${PORT}`).replace(/\/$/, '');
+const BASE_URL = (process.env.PUBLIC_BASE_URL ?? `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
+
+let realRoutes: RealRoutes | undefined;
+export const installRealRoutes = (routes?: RealRoutes) => { realRoutes = routes; };
 
 const checkoutTickets = new Map<string, { entry_id: string; expires: number }>();
 
@@ -21,7 +26,7 @@ const resolvedProducts = new Map(PRODUCTS.map(product => [entryId(product), prod
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
 }
 
@@ -100,7 +105,7 @@ function contracts() {
   };
 }
 
-function toEntry(product: Product) {
+function toEntry(product: Product, checkoutMode: 'MOCK' | 'REAL_PREVIEW_ELIGIBLE' = 'MOCK') {
   return {
     kind: 'CatalogEntry',
     catalog_id: CATALOG_ID,
@@ -121,16 +126,18 @@ function toEntry(product: Product) {
       price_basis: product.price_basis ?? 'mock_fixture',
       source_reason: product.source_reason,
       retrieved_at: product.updated_at,
-      transaction_source: 'MOCK',
+      transaction_source: checkoutMode,
     },
   };
 }
 
-async function query(body: CatalogQueryRequest, policy: ReturnType<typeof validateCatalogQueryRequest>['policy_summary']) {
+async function query(request: Request, body: CatalogQueryRequest, policy: ReturnType<typeof validateCatalogQueryRequest>['policy_summary']) {
   const term = (body.query ?? '').trim().toLowerCase();
   const limit = Math.min(Math.max(body.limit ?? 20, 1), 50);
   const providers = (['luckin', 'mcdonalds', 'kfc'] as const).filter(provider => !body.filters?.provider_id || body.filters.provider_id === provider);
-  const groups = await Promise.all(providers.map(provider => providerProducts(provider, term)));
+  const realFlow = request.headers.get('x-agentmall-flow') === 'real';
+  if (realFlow && (!realRoutes || body.filters?.provider_id !== 'luckin')) throw new CheckoutError(400, 'Real flow currently supports only explicitly selected Luckin store');
+  const groups = await Promise.all(providers.map(async provider => provider === 'luckin' && realFlow ? (await realRoutes!.queryProducts(request, term))! : providerProducts(provider, term)));
   const products = groups.flat();
   for (const product of products) resolvedProducts.set(entryId(product), product);
   for (const [id, product] of resolvedProducts) if (product.source === 'LIVE' && Date.parse(product.updated_at) + LIVE_TTL_MS < Date.now()) resolvedProducts.delete(id);
@@ -152,14 +159,14 @@ async function query(body: CatalogQueryRequest, policy: ReturnType<typeof valida
     result_count: page.length,
     page: { limit, offset: 0, has_more: matches.length > limit },
     entries: page.map((product) => ({
-      entry: toEntry(product),
+      entry: toEntry(product, realFlow ? 'REAL_PREVIEW_ELIGIBLE' : 'MOCK'),
       score: 1,
       explain: [`Keyword match for "${body.query ?? ''}".`],
     })),
   };
 }
 
-function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
+function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }, request: Request) {
   const product = resolvedProducts.get(body.entry_id ?? '');
   if (!product) {
     return json(
@@ -173,8 +180,13 @@ function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
   const expires = new Date(expiry).toISOString();
   for (const [id, ticket] of checkoutTickets) if (ticket.expires < Date.now()) checkoutTickets.delete(id);
   const checkout = body.purpose === 'checkout';
+  let realBinding: ReturnType<RealRoutes['bind']> = null;
+  if (checkout && request.headers.get('x-agentmall-flow') === 'real') {
+    if (!realRoutes) return json({ error: { code: 'real_disabled', message: 'Real workflow unavailable' } }, 403);
+    try { realBinding = realRoutes.bind(request, product); } catch (e) { return json({ error: { code: 'real_selection', message: e instanceof CheckoutError ? e.message : 'Selection unavailable' } }, e instanceof CheckoutError ? e.status : 400); }
+  }
   const resolutionId = `res_${crypto.randomUUID()}`;
-  if (checkout) checkoutTickets.set(resolutionId, { entry_id: entryId(product), expires: expiry });
+  if (checkout && !realBinding) checkoutTickets.set(resolutionId, { entry_id: entryId(product), expires: expiry });
   return json({
     ocp_version: '1.0',
     kind: 'ResolvableReference',
@@ -196,19 +208,22 @@ function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
       price_basis: product.price_basis ?? 'mock_fixture',
       source_reason: product.source_reason,
       retrieved_at: product.updated_at,
-      transaction_source: 'MOCK',
+      transaction_source: realBinding ? 'REAL_WORKFLOW' : 'MOCK',
+      transaction_id: realBinding?.transaction_id,
     },
     action_bindings: [
       {
-        action_id: checkout ? 'mock-checkout' : 'view',
-        action_type: checkout ? 'api' : 'url',
-        label: checkout ? 'Confirm simulated order' : 'View retrieved product snapshot',
-        entrypoint: checkout ? { url: `${BASE_URL}/mock/checkout`, method: 'POST' } : { url: `${BASE_URL}/products/${encodeURIComponent(entryId(product))}`, method: 'GET' },
+        action_id: realBinding ? 'luckin-real-preview' : checkout ? 'mock-checkout' : 'view',
+        action_type: realBinding ? 'workflow' : checkout ? 'api' : 'url',
+        label: realBinding ? '瑞幸真实订单预览；创建订单需另行人工确认' : checkout ? 'Confirm simulated order' : 'View retrieved product snapshot',
+        auth_requirements: realBinding ? { browser_session: true, csrf: true, confirmed_store: true } : {},
+        input_schema: realBinding ? { type: 'object', properties: { quantity: { type: 'integer', minimum: 1, maximum: 5 } }, required: ['quantity'], additionalProperties: false } : undefined,
+        entrypoint: realBinding ? { url: `${BASE_URL}/api/luckin/transactions/${realBinding.transaction_id}/preview`, method: 'POST' } : checkout ? { url: `${BASE_URL}/mock/checkout`, method: 'POST' } : { url: `${BASE_URL}/products/${encodeURIComponent(entryId(product))}`, method: 'GET' },
         requires_user_confirmation: checkout,
         expires_at: expires,
       },
     ],
-    access: { visibility: 'public', permission_state: 'granted', redacted_fields: [], policy_notes: ['Checkout always simulates an order; no real purchase.', 'Resolve uses the retrieved snapshot; no fresh quote or availability check.'] },
+    access: { visibility: 'public', permission_state: 'granted', redacted_fields: [], policy_notes: realBinding ? ['Real preview requires an authorized browser and explicitly confirmed store.', 'Creation defaults disabled and requires a separate one-use browser confirmation after preview.'] : ['Checkout simulates an order; no real purchase.', 'Resolve uses the retrieved snapshot; no fresh quote or availability check.'] },
     live_checks: [{ check_id: 'snapshot-only', status: 'not_applicable', checked_at: now, summary: 'Read-only snapshot; availability and final order price are unverified' }],
     freshness: { object_updated_at: product.updated_at, resolved_at: now },
     // Action expires after five minutes; LIVE snapshots must also remain fresh.
@@ -229,7 +244,10 @@ export async function handle(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
   const { method } = request;
 
-  if (method === 'GET' && pathname === '/') return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  if (!['127.0.0.1', 'localhost'].includes(new URL(request.url).hostname)) return json({ error: { code: 'local_only', message: 'Loopback host required' } }, 403);
+  if (request.headers.get('origin') && request.headers.get('origin') !== new URL(request.url).origin) return json({ error: { code: 'origin', message: 'Cross-origin requests rejected' } }, 403);
+  if (pathname.startsWith('/api/')) return (await realRoutes?.route(request)) ?? json({ error: { code: 'real_unavailable', message: 'Real workflow not initialized' } }, 403);
+  if (method === 'GET' && pathname === '/') return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY', 'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" } });
   if (method === 'GET' && pathname.startsWith('/products/')) {
     const product = resolvedProducts.get(decodeURIComponent(pathname.slice('/products/'.length)));
     if (!product) return json({ error: { code: 'not_found', message: 'Unknown product' } }, 404);
@@ -255,8 +273,9 @@ export async function handle(request: Request): Promise<Response> {
     if (parsed.data.cursor) return json({ error: { code: 'unsupported_cursor', message: 'Pagination cursor not supported in this MVP' } }, 400);
     try {
       const validated = validateCatalogQueryRequest(catalogManifestSchema.parse(manifest()), parsed.data);
-      return json(await query(validated.request, validated.policy_summary));
-    } catch {
+      return json(await query(request, validated.request, validated.policy_summary));
+    } catch (error) {
+      if (error instanceof CheckoutError) return json({ error: { code: 'real_context', message: error.message } }, error.status);
       return json({ error: { code: 'invalid_query_capability', message: 'Query mode or filters are not declared by this manifest' } }, 400);
     }
   }
@@ -265,7 +284,7 @@ export async function handle(request: Request): Promise<Response> {
     if (!parsed.success) return json({ error: { code: 'invalid_resolve', message: 'Invalid OCP resolve request' } }, 400);
     if (parsed.data.catalog_id && parsed.data.catalog_id !== CATALOG_ID) return json({ error: { code: 'invalid_catalog', message: 'Unknown catalog_id' } }, 400);
     if (!['view', 'checkout'].includes(parsed.data.purpose)) return json({ error: { code: 'unsupported_purpose', message: 'Purpose not supported by demo' } }, 400);
-    return resolve({ entry_id: parsed.data.entry_id, purpose: parsed.data.purpose as 'view' | 'checkout' });
+    return resolve({ entry_id: parsed.data.entry_id, purpose: parsed.data.purpose as 'view' | 'checkout' }, request);
   }
 
   return json({ error: { code: 'not_found', message: `No route for ${method} ${pathname}` } }, 404);
@@ -273,6 +292,7 @@ export async function handle(request: Request): Promise<Response> {
 
 // Start the server unless imported by a test.
 if (import.meta.main) {
-  Bun.serve({ port: PORT, fetch: handle });
-  console.log(`AgentMall Dining OCP Catalog listening on ${BASE_URL}`);
+  installRealRoutes(createRealRuntime(BASE_URL));
+  Bun.serve({ hostname: '127.0.0.1', port: PORT, fetch: handle });
+  console.log(`AgentMall Dining OCP Catalog listening on ${BASE_URL}; use bun run open to authorize browser. Real orders: ${realRoutes!.enabled ? 'ENABLED (manual browser confirmation required)' : 'DISABLED (preview only)'}`);
 }

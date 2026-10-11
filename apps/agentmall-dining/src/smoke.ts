@@ -1,8 +1,8 @@
 import { catalogManifestSchema, catalogQueryResultSchema, resolvableReferenceSchema, catalogQueryRequestSchema } from '@ocp-catalog/ocp-schema';
 import { validateCatalogQueryRequest } from '@ocp-catalog/ocp-client';
 import { handle } from './server';
-const server = Bun.serve({ port: Number(process.env.PORT ?? 4401), fetch: handle });
-const base = `http://localhost:${server.port}`;
+const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT ?? 4401), fetch: handle });
+const base = `http://127.0.0.1:${server.port}`;
 const get = async (path: string) => { const response = await fetch(base + path); if (!response.ok) throw new Error(`GET ${path} ${response.status}`); return response.json(); };
 const post = async (path: string, body: unknown) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 try {

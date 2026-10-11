@@ -12,7 +12,7 @@ function finitePrice(value: unknown): number | null {
   return Number.isFinite(price) && price >= 0 ? price : null;
 }
 
-export function mapLuckinProducts(data: any, store: { deptId: number; deptName: string }, now: string): Product[] {
+export function mapLuckinProducts(data: any, store: { deptId: number; deptName: string; address?: string }, now: string): Product[] {
   if (!Array.isArray(data)) throw new Error('Unexpected Luckin product shape');
   return data.flatMap((item: any): Product[] => {
     const amount = finitePrice(item.estimatePrice);
@@ -20,7 +20,7 @@ export function mapLuckinProducts(data: any, store: { deptId: number; deptName: 
     return [{ id: `${store.deptId}-${item.productId}-${item.skuCode}`, provider_id: 'luckin', title: item.productName,
       summary: `LIVE · ${store.deptName} · 商家预估价格，非订单预览`, brand: '瑞幸', category: 'coffee',
       currency: 'CNY', amount, availability: 'unknown',
-      updated_at: now, source: 'LIVE', store: { id: String(store.deptId), name: store.deptName }, price_basis: 'estimatePrice',
+      updated_at: now, source: 'LIVE', store: { id: String(store.deptId), name: store.deptName, address: store.address }, merchant_product_id: item.productId, merchant_sku: item.skuCode, price_basis: 'estimatePrice',
       ...(typeof item.pictureUrl === 'string' ? { image_url: item.pictureUrl } : {}) }];
   });
 }

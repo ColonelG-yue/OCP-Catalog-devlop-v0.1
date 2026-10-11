@@ -1,22 +1,51 @@
-# AgentMall Dining MVP
+# AgentMall Dining
 
-OCP Catalog 统一查询瑞幸、麦当劳与 KFC。瑞幸和麦当劳可通过本地 MCP Token 读取 LIVE 商品，失败时明确回退 MOCK；KFC 始终 MOCK。所有 checkout 均为模拟，不产生真实消费。
+OCP Catalog 统一查询商品。瑞幸支持真实商品、完整默认规格和真实订单预览，并提供受控的真实提交路径；麦当劳保留 LIVE 菜单，KFC 保留 MOCK。独立 Mock Demo 始终可用。
+
+## 安装与验收
 
 ```bash
 bun install                       # 仓库根目录
 cd apps/agentmall-dining
-bun run selfcheck
-bun run demo                      # 稳定 Mock 演示
-bun run mcp                       # 工具列表 + 只读商品验证
-bun run smoke                     # HTTP 验收
+bun run selfcheck                  # 所有交易测试使用 Mock MCP Client
+bun run demo                      # 固定 Mock 订单，不依赖网络
 bun run typecheck
-bun run start                     # http://localhost:4400
+bun run smoke                     # 只读商品 + Mock 结算，真实创建禁用
+bun run preview                   # LIVE 只读预览证据；不能创建订单
 ```
 
-Bun 自动加载被 Git 忽略的 `.env.local`。需要的变量名为 `LUCKIN_MCP_TOKEN`、`MCD_MCP_TOKEN`；凭据仅留在本地，不进入前端或版本控制。缺少凭据也能运行 Mock Demo 和 Catalog。
+`.env.local` 已被 Git 忽略，Bun 自动加载 `LUCKIN_MCP_TOKEN`、`MCD_MCP_TOKEN`；Token 不进入前端、日志或 Git。私有确认、会话与交易恢复记录在被忽略的 `.agentmall-state/`，权限目录 700、文件 600。
 
-页面输入「瑞幸，30 元以内来一杯生椰拿铁」或手选商家，执行 Discovery → Query → Resolve → 确认模拟结算。商品标示 LIVE/MOCK；实时商品的 checkout 仍标示 MOCK。价格来自只读接口，最终订单报价未验证。
+## 先运行真实预览
 
-默认使用杭州演示地点：瑞幸 `(120.1551,30.2741)`，麦当劳 `杭州/武林`。可通过本地环境变量 `LUCKIN_LONGITUDE`、`LUCKIN_LATITUDE`、`MCD_CITY`、`MCD_STORE_KEYWORD` 调整，不代表自动定位。
+```bash
+bun run start                     # 开发模式；真实创建强制禁用
+# 在另一终端，仍位于 apps/agentmall-dining：
+bun run open                      # 一次性授权链接交给本机浏览器，不打印链接密钥
+```
 
-实测能力与限制见 [INTEGRATIONS.md](docs/INTEGRATIONS.md)，审核交接见 [HANDOFF.md](docs/HANDOFF.md)。
+1. 在「瑞幸真实订单」区域授权浏览器定位，或明确输入经纬度。这里没有杭州演示坐标默认值。
+2. 查询门店，选择实际门店与地址，勾选取餐确认并点击「确认取餐门店」。
+3. 「通过 OCP 查询商品」→选择商品，触发 Resolve(checkout) 受控 Workflow。
+4. 设置数量 1–5，点击「获取真实订单预览」。核对门店、地址、商品、完整默认规格、数量、优惠数量与最终应付金额。
+
+默认启动下「确认创建真实订单」按钮不可用。CLI `preview` 的杭州位置只用于可复现的预览证据，**不是用户确认的实际取餐门店**，不会进入真实交易日志。
+
+## Reviewer 通过后，由用户实际创建
+
+先停止预览服务器，再由用户启动：
+
+```bash
+bun run start:real                # production + 显式启用真实提交
+bun run open
+```
+
+重新选择实际取餐门店与商品并取得预览，勾选最终确认后，**用户亲自点击「确认创建真实订单」**。此时才可能调用 `createOrder`。服务器再次预览并核对价格、优惠券和商品明细，变化或过期都要求重新预览与确认。
+
+创建成功仅表示产生订单。页面只展示商家实际返回的 `payOrderQrCodeUrl`，付款由用户完成。点击「查询真实订单状态」执行只读 `queryOrderDetailInfo`；当前没有真实用户订单的状态字段样本，因此未验证的付款状态保持 UNKNOWN，不能宣称 PAID。
+
+超时或未知结果不会重试创建；有订单号时只读核对，无订单号时先在瑞幸 App 核对并填入订单号。未核实的提交会阻止再次下单，包括更换浏览器或重启。不要删除日志来绕过未知状态。
+
+服务器默认只监听 `127.0.0.1`，真实交易接口要求已授权的 HttpOnly/SameSite 浏览器会话、精确 Origin 和 CSRF。请勿代理到公网。
+
+本轮没有执行真实创建、支付或取消。只支持默认规格；自定义规格切换、麦当劳真实交易、付款状态自动映射仍待后续验证。详见 [MODEL_SPEC.md](MODEL_SPEC.md)、[INTEGRATIONS.md](docs/INTEGRATIONS.md) 和 [HANDOFF.md](docs/HANDOFF.md)。

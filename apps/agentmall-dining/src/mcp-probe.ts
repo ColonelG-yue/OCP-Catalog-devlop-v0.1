@@ -12,12 +12,17 @@ export async function withMcp<T>(name: Merchant, work: (client: Client) => Promi
   const service = SERVICES[name];
   const token = process.env[service.env];
   if (!token) throw new Error(`${service.env} unavailable`);
-  const client = new Client({ name: 'agentmall-dining-readonly', version: '0.1.0' });
+  const client = new Client({ name: 'agentmall-dining', version: '0.1.0' });
   const transport = new StreamableHTTPClientTransport(new URL(service.url), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   });
   // Keep SDK/transport errors out of logs because they may contain request context.
   client.onerror = () => {};
+  const originalCall = client.callTool.bind(client);
+  client.callTool = ((...args: Parameters<Client['callTool']>) => {
+    assertMerchantToolPolicy(args[0].name);
+    return originalCall(...args);
+  }) as Client['callTool'];
   try {
     await client.connect(transport, { timeout: 10000 });
     return await work(client);
@@ -85,4 +90,20 @@ export async function callReadTool(client: Client, merchant: Merchant, name: str
   const data = decodeToolResult(await client.callTool({ name, arguments: args }, undefined, { timeout: 10000 }));
   if (data.success === false || (typeof data.code === 'number' && ![0, 200].includes(data.code))) throw new Error('Merchant data unavailable');
   return data;
+}
+
+export async function callPreviewTool(client: Client, name: string, args: Record<string, unknown>, tools: Awaited<ReturnType<Client['listTools']>>['tools']) {
+  if (!['queryProductDetailInfo', 'previewOrder'].includes(name)) throw new Error('Tool outside preview allowlist');
+  const tool = tools.find(tool => tool.name === name);
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  if (!tool || !ajv.validate(tool.inputSchema, args)) throw new Error('Invalid merchant preview arguments');
+  const data = decodeToolResult(await client.callTool({ name, arguments: args }, undefined, { timeout: 10000 }));
+  if (data.success === false || (typeof data.code === 'number' && ![0, 200].includes(data.code))) throw new Error('Merchant preview unavailable');
+  return data;
+}
+
+
+export function assertMerchantToolPolicy(name: string) {
+  if (['cancelOrder', 'cancel-order'].includes(name)) throw new Error('Cancellation is not implemented or authorized');
+  if (['createOrder', 'create-order', 'mall-create-order', 'party-order-create'].includes(name) && (process.env.NODE_ENV !== 'production' || process.env.AGENTMALL_ENABLE_REAL_ORDERS !== '1' || process.env.AGENTMALL_TEST_MODE === '1' || process.env.AGENTMALL_DATA_MODE === 'mock')) throw new Error('Real merchant creation disabled at SDK boundary');
 }
