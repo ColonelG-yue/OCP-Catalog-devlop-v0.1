@@ -16,11 +16,14 @@
  * parses every response through those schemas to prove conformance.
  */
 import { PRODUCTS, type Product } from './products';
+import { page } from './page';
 
 const CATALOG_ID = process.env.CATALOG_ID ?? 'cat_agentmall_dining';
 const CATALOG_NAME = process.env.CATALOG_NAME ?? 'AgentMall Dining Catalog';
 const PORT = Number(process.env.PORT ?? 4400);
 const BASE_URL = (process.env.PUBLIC_BASE_URL ?? `http://localhost:${PORT}`).replace(/\/$/, '');
+
+const checkoutTickets = new Map<string, { entry_id: string; expires: number }>();
 
 const entryId = (product: Product) => `entry_${product.provider_id}_${product.id}`;
 
@@ -161,10 +164,12 @@ function resolve(body: { entry_id?: string; purpose?: 'view' | 'checkout' }) {
   const now = new Date().toISOString();
   const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const checkout = body.purpose === 'checkout';
+  const resolutionId = `res_${crypto.randomUUID()}`;
+  if (checkout) checkoutTickets.set(resolutionId, { entry_id: entryId(product), expires: Date.now() + 5 * 60 * 1000 });
   return json({
     ocp_version: '1.0',
     kind: 'ResolvableReference',
-    id: `res_${crypto.randomUUID()}`,
+    id: resolutionId,
     catalog_id: CATALOG_ID,
     entry_id: entryId(product),
     commercial_object_id: `co_${product.id}`,
@@ -208,6 +213,14 @@ export async function handle(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
   const { method } = request;
 
+  if (method === 'GET' && pathname === '/') return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  if (method === 'POST' && pathname === '/mock/checkout') {
+    const body = await readJson(request);
+    const ticket = checkoutTickets.get(String(body.resolution_id ?? ''));
+    if (!ticket || ticket.entry_id !== body.entry_id || ticket.expires < Date.now() || body.confirmed !== true) return json({ error: { code: 'invalid_confirmation', message: 'Valid checkout resolution and explicit confirmation required' } }, 400);
+    checkoutTickets.delete(String(body.resolution_id));
+    return json({ status: 'MOCK', mock_order_id: `MOCK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, charged: false });
+  }
   if (method === 'GET' && pathname === '/.well-known/ocp-catalog') return json(wellKnownDiscovery());
   if (method === 'GET' && pathname === '/ocp/manifest') return json(manifest());
   if (method === 'GET' && pathname === '/ocp/health') return json(health());
