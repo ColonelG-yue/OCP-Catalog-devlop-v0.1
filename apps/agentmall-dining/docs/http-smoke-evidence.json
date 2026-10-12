@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-11T12:06:29.309Z",
+  "checked_at": "2026-10-12T04:53:40.572Z",
   "evidence": [
     {
       "provider_id": "luckin",
@@ -11,9 +11,9 @@
         "amount": 20
       },
       "store": {
-        "id": "619779",
-        "name": "密渡桥路店",
-        "address": "拱墅区米市巷街道密渡桥路3号1幢106室"
+        "id": "603072",
+        "name": "滨绿大厦A座负一楼店",
+        "address": "拱墅区湖墅南路66-1号滨绿大厦1幢负一层A11号"
       },
       "transaction": "MOCK"
     },

@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-12",
+  "browser": "Google Chrome (native accessibility control)",
+  "mode": "start / development / real creation disabled",
+  "authorization": "PASS",
+  "unauthorized_browser": "PASS: real flow unavailable, creation button disabled",
+  "actual_geolocation": "PASS: user approved location for this visit only; coordinates not recorded here",
+  "store_selection": "PASS: merchant returned store chosen, consent required, displayed address matched preview",
+  "ocp_flow": "PASS: Discovery / Manifest / Query / Resolve(checkout) / LIVE preview",
+  "product": "生椰拿铁（原创）",
+  "specification": "大杯/冰/意式拼配/默认浓度/不另外加糖/无奶油",
+  "quantity": 1,
+  "final_cents": 2000,
+  "currency": "CNY",
+  "creation_button": "PASS: disabled before and after preview review",
+  "store_reselection": "PASS: old preview cleared, final/store consent unchecked, preview and submission disabled",
+  "quote_expiry": "PASS: observed EXPIRED after quote validity elapsed; preview and creation disabled",
+  "replay_guard": "PASS in Mock MCP tests; real SDK creation disabled, no live submit request issued",
+  "live_create_calls": 0,
+  "live_payment_actions": 0,
+  "live_cancellation_calls": 0,
+  "privacy": "User coordinates, actual store identity/address, cookies and confirmation credentials omitted"
+}

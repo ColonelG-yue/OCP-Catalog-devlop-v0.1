@@ -8,6 +8,13 @@ export type Selection = { entryId: string; productId: number; title: string; sto
 export type Preview = { store: Store; line: Line; title: string; specification: string; totalCents: number; discountCents: number; finalCents: number; coupons: string[] };
 export type Transaction = { id: string; owner: string; state: State; selection: Selection; preview?: Preview; fingerprint?: string; confirmHash?: string; expiresAt: number; orderId?: string; paymentUrl?: string; createdFinalCents?: number; priceChanged?: boolean; merchantStatus?: unknown; note?: string; history: { state: State; at: string }[] };
 export class CheckoutError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
+export const VERIFIED_LUCKIN_PAYMENT_HOSTS: readonly string[] = []; // No official payment host has yet been verified. Fail closed.
+export function verifiedPaymentUrl(value: unknown, hosts: readonly string[] = VERIFIED_LUCKIN_PAYMENT_HOSTS): string | undefined {
+  if (typeof value !== 'string' || value.trim() !== value) return undefined;
+  try { const url=new URL(value); if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') || !hosts.includes(url.hostname)) return undefined; return value; } catch { return undefined; }
+}
+const UNRESOLVED: State[] = ['SUBMITTING','UNKNOWN','ORDER_CREATED','PAYMENT_PENDING'];
+const sameStore = (a: Store | undefined, b: Store) => Boolean(a && a.id === b.id && a.address === b.address && a.name === b.name && a.longitude === b.longitude && a.latitude === b.latitude);
 export const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const equal = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const cents = (amount: unknown): number => {
@@ -63,6 +70,10 @@ export class CheckoutService {
     if (['SELECTED','PREVIEWED','AWAITING_CONFIRMATION'].includes(tx.state) && tx.expiresAt <= this.now()) { tx.confirmHash = undefined; this.move(tx, 'EXPIRED', 'Preview expired; select and preview again'); }
     return tx;
   }
+  invalidateStoreContext(owner: string) {
+    if ([...this.transactions.values()].some(tx=>UNRESOLVED.includes(tx.state))) throw new CheckoutError(409,'Unresolved merchant transaction: store changes are blocked until reconciliation');
+    for (const tx of this.transactions.values()) if (tx.owner===owner && ['SELECTED','PREVIEWED','AWAITING_CONFIRMATION'].includes(tx.state)) { tx.confirmHash=undefined; tx.preview=undefined; tx.fingerprint=undefined; this.move(tx,'EXPIRED','Pickup store context changed; select and preview again'); }
+  }
   list(owner: string) { return [...this.transactions.values()].filter(tx=>tx.owner===owner).map(tx=>this.public(owner,tx.id)); }
   select(owner: string, selection: Selection) {
     for (const tx of this.transactions.values()) if (tx.owner === owner) this.get(owner,tx.id);
@@ -89,20 +100,22 @@ export class CheckoutService {
       if (!complete) throw new CheckoutError(502,'Merchant default SKU is incomplete or unavailable');
       const line = { productId: detail.productId, skuCode: detail.skuCode, amount };
       const preview = parsePreview(await this.adapter.preview(tx.selection.store,line),tx.selection.store,line);
+      if (tx.state !== 'PREVIEWED') throw new CheckoutError(409,'Pickup store context changed during preview');
       tx.preview = preview; tx.fingerprint = fingerprint(preview); tx.expiresAt = this.now()+60_000;
       const confirmation = randomBytes(32).toString('base64url'); tx.confirmHash = fingerprint(confirmation);
       this.move(tx,'AWAITING_CONFIRMATION');
       return { ...this.public(owner,id), confirmation };
-    } catch { this.move(tx,'FAILED','Preview incomplete or merchant unavailable; no creation attempted'); throw new CheckoutError(502,tx.note!); }
+    } catch { if (tx.state==='EXPIRED') throw new CheckoutError(409,'Pickup store context changed during preview; discarded'); this.move(tx,'FAILED','Preview incomplete or merchant unavailable; no creation attempted'); throw new CheckoutError(502,tx.note!); }
   }
   public(owner: string,id: string) {
     const tx = this.get(owner,id);
-    return { transaction_id:tx.id,state:tx.state,selection:{...tx.selection},preview:tx.preview ? {...tx.preview,coupons:undefined,coupon_count:tx.preview.coupons.length} : undefined, fingerprint:tx.fingerprint,expires_at:new Date(tx.expiresAt).toISOString(),order_id:tx.orderId,payment_url:tx.paymentUrl,created_final_cents:tx.createdFinalCents,price_changed:tx.priceChanged,merchant_status:tx.merchantStatus,note:tx.note,history:tx.history,submissions_enabled:this.submissionsEnabled };
+    return { transaction_id:tx.id,state:tx.state,selection:{...tx.selection},preview:tx.preview ? {...tx.preview,coupons:undefined,coupon_count:tx.preview.coupons.length} : undefined, fingerprint:tx.fingerprint,expires_at:new Date(tx.expiresAt).toISOString(),order_id:tx.orderId,payment_url:verifiedPaymentUrl(tx.paymentUrl),created_final_cents:tx.createdFinalCents,price_changed:tx.priceChanged,merchant_status:tx.merchantStatus,note:tx.note,history:tx.history,submissions_enabled:this.submissionsEnabled };
   }
-  async submit(owner: string, id: string, input: Record<string,unknown>) {
+  async submit(owner: string, id: string, input: Record<string,unknown>, currentStore?: Store) {
     if (!this.submissionsEnabled) throw new CheckoutError(403,'Real submission disabled; preview only');
     const tx=this.get(owner,id), p=tx.preview;
     if (tx.state !== 'AWAITING_CONFIRMATION' || !p || !tx.confirmHash) throw new CheckoutError(409,'Confirmation already consumed or transaction not ready');
+    if (!sameStore(currentStore,p.store)) { tx.confirmHash=undefined; this.move(tx,'EXPIRED','Current confirmed store does not match preview'); throw new CheckoutError(409,'Current confirmed store does not match preview store ID/address'); }
     if (input.confirmed !== true || input.store_confirmed !== true || input.intent !== 'CREATE_REAL_ORDER' || typeof input.confirmation !== 'string' || !equal(fingerprint(input.confirmation),tx.confirmHash) || input.fingerprint !== tx.fingerprint || input.store_id !== p.store.id || input.product_id !== p.line.productId || input.sku !== p.line.skuCode || input.quantity !== p.line.amount || input.final_cents !== p.finalCents) throw new CheckoutError(400,'Explicit confirmation does not match the immutable preview');
     if ([...this.transactions.values()].some(other=>other.id!==tx.id && ['SUBMITTING','UNKNOWN','ORDER_CREATED','PAYMENT_PENDING'].includes(other.state))) throw new CheckoutError(409,'Another merchant submission is pending or unknown');
     tx.confirmHash=undefined; this.move(tx,'SUBMITTING'); // persisted before any side effect; blocks concurrent/replay submissions
@@ -116,9 +129,7 @@ export class CheckoutService {
     if (typeof created?.orderId !== 'string' || !created.orderId) { this.move(tx,'UNKNOWN','Merchant response has no documented order ID; do not retry'); return this.public(owner,id); }
     if (typeof created.discountPrice==='number') { try { tx.createdFinalCents=cents(created.discountPrice); tx.priceChanged=tx.createdFinalCents!==p.finalCents; } catch {} }
     tx.orderId=created.orderId; this.move(tx,'ORDER_CREATED','Order created; payment not confirmed');
-    if (typeof created.payOrderQrCodeUrl === 'string') {
-      try { const url=new URL(created.payOrderQrCodeUrl); if (url.protocol==='https:' && !url.username && !url.password) tx.paymentUrl=created.payOrderQrCodeUrl; } catch {}
-    }
+    tx.paymentUrl=verifiedPaymentUrl(created.payOrderQrCodeUrl);
     if (tx.paymentUrl) this.move(tx,'PAYMENT_PENDING','Use the merchant payment entry yourself; creation is not payment');
     // One read-only query after creation. No creation retry, polling, payment or cancellation.
     return this.reconcile(owner,id);
@@ -142,7 +153,7 @@ export class CheckoutService {
 
 function sanitizeMerchantStatus(input: unknown): unknown {
   if (Array.isArray(input)) return input.map(sanitizeMerchantStatus);
-  if (input && typeof input==='object') return Object.fromEntries(Object.entries(input).filter(([key])=>!/(token|secret|coupon|phone|mobile|payOrderUrl|__verified)/i.test(key)).map(([key,value])=>[key,sanitizeMerchantStatus(value)]));
+  if (input && typeof input==='object') return Object.fromEntries(Object.entries(input).filter(([key])=>!/(token|secret|coupon|phone|mobile|payOrder|payment.*url|__verified)/i.test(key)).map(([key,value])=>[key,sanitizeMerchantStatus(value)]));
   if (typeof input==='string') { let text=input; for(const key of ['LUCKIN_MCP_TOKEN','MCD_MCP_TOKEN']) if(process.env[key]) text=text.replaceAll(process.env[key]!, '[REDACTED]'); return text; }
   return input;
 }

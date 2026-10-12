@@ -54,6 +54,8 @@ export class BrowserGate {
 export class RealRoutes {
   readonly checkout: CheckoutService;
   private stores=new Map<string,Map<number,Store>>();
+  private storeVersions=new Map<string,number>();
+  private changeStore(owner:string) { this.checkout.invalidateStoreContext(owner); this.storeVersions.set(owner,(this.storeVersions.get(owner) ?? 0)+1); this.selectedStores.delete(owner); return this.storeVersions.get(owner)!; }
   private selectedStores=new Map<string,Store>();
   constructor(readonly gate:BrowserGate, private gateway:Pick<LuckinGateway,'stores'|'search'>, adapter:RealCheckoutAdapter, journal:Journal, readonly enabled:boolean) { this.checkout=new CheckoutService(adapter,journal,enabled); }
   private json(body:unknown,status=200,headers?:HeadersInit) { return new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json','cache-control':'no-store',...headers}}); }
@@ -74,15 +76,22 @@ export class RealRoutes {
       if (request.method!=='POST') throw new CheckoutError(405,'POST required');
       const body=await request.json() as Record<string,unknown>;
       if (!body || typeof body!=='object' || Array.isArray(body)) throw new CheckoutError(400,'JSON object required');
+      if (pathname==='/api/luckin/store/reset') {
+        this.changeStore(session.owner);
+        return this.json({store:null});
+      }
       if (pathname==='/api/luckin/stores') {
+        const version=this.changeStore(session.owner); this.stores.delete(session.owner);
         const longitude=body.longitude,latitude=body.latitude;
         if (typeof longitude!=='number'||longitude < -180||longitude >180||typeof latitude!=='number'||latitude < -90||latitude>90||!Number.isFinite(longitude)||!Number.isFinite(latitude)) throw new CheckoutError(400,'Provide explicit coordinates; no demo defaults');
         const stores=await this.gateway.stores(longitude,latitude,typeof body.name==='string'?body.name:undefined);
+        if (this.storeVersions.get(session.owner)!==version) throw new CheckoutError(409,'Store query superseded; discard stale results');
         this.stores.set(session.owner,new Map(stores.map(store=>[store.id,store])));
         return this.json({stores});
       }
       if (pathname==='/api/luckin/store/select') {
         const store=this.stores.get(session.owner)?.get(Number(body.store_id));
+        this.changeStore(session.owner);
         if (!store || body.confirmed!==true) throw new CheckoutError(400,'Select and explicitly confirm a returned pickup store');
         this.selectedStores.set(session.owner,store);
         return this.json({store});
@@ -91,7 +100,7 @@ export class RealRoutes {
       if (!match) return this.json({error:{code:'not_found',message:'Unknown real route'}},404);
       const [,id,action]=match;
       if (action==='preview') return this.json(await this.checkout.preview(session.owner,id!,Number(body.quantity)));
-      if (action==='submit') return this.json(await this.checkout.submit(session.owner,id!,body));
+      if (action==='submit') return this.json(await this.checkout.submit(session.owner,id!,body,this.selectedStores.get(session.owner)));
       return this.json(await this.checkout.reconcile(session.owner,id!,typeof body.order_id==='string'?body.order_id:undefined));
     } catch (error) {
       const known=error instanceof CheckoutError;
@@ -103,14 +112,16 @@ export class RealRoutes {
     const session=this.gate.session(request,true);
     const store=this.selectedStores.get(session.owner);
     if (!store) throw new CheckoutError(400,'Confirm a pickup store first');
+    const version=this.storeVersions.get(session.owner);
     const raw=await this.gateway.search(store,keyword||'咖啡');
+    if(this.storeVersions.get(session.owner)!==version) throw new CheckoutError(409,'Store context changed during product query');
     return mapLuckinProducts(raw,{deptId:store.id,deptName:store.name,address:store.address},new Date().toISOString());
   }
   bind(request:Request,product:Product) {
     if (request.headers.get('x-agentmall-flow')!=='real') return null;
     const session=this.gate.session(request,true);
     const store=this.selectedStores.get(session.owner);
-    if (!store || product.provider_id!=='luckin'||product.source!=='LIVE'||String(store.id)!==product.store?.id||!Number.isInteger(product.merchant_product_id)) throw new CheckoutError(400,'Product does not belong to the explicitly confirmed store');
+    if (!store || product.provider_id!=='luckin'||product.source!=='LIVE'||(String(store.id)!==product.store?.id||store.address!==product.store?.address)||!Number.isInteger(product.merchant_product_id)) throw new CheckoutError(400,'Product does not belong to the explicitly confirmed store');
     return this.checkout.select(session.owner,{entryId:`entry_${product.provider_id}_${product.id}`,productId:product.merchant_product_id!,title:product.title,store});
   }
 }

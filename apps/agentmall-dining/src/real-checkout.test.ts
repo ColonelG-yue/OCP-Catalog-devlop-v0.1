@@ -19,6 +19,7 @@ class MockMcpClient {
   calls:{name:string;arguments:any}[]=[];
   price=20;coupons:string[]=['FAKE-COUPON'];sku='FAKE-SKU';createFailure=false;created:any={orderId:'FAKE_ORDER',payOrderQrCodeUrl:'https://example.invalid/qr.png'};
   beforeCreate?:()=>Promise<void>;
+  beforePreview?:()=>Promise<void>;
   statusData:any={orderId:'FAKE_ORDER',fake_payment:'PAID'};
   tools=JSON.parse(readFileSync(new URL('../docs/luckin-tools.json',import.meta.url),'utf8')).tools;
   async listTools(){return {tools:this.tools};}
@@ -29,7 +30,7 @@ class MockMcpClient {
     if(params.name==='queryShopList')data=[{deptId:store.id,deptName:store.name,address:store.address,longitude:store.longitude,latitude:store.latitude,workStatus:'营业中'}];
     else if(params.name==='searchProductForMcp')data=[{productId:123,skuCode:this.sku,productName:'FAKE latte',estimatePrice:this.price}];
     else if(params.name==='queryProductDetailInfo')data={productId:123,skuCode:this.sku,productAttrs:[{attributeName:'FAKE temperature',productSubAttrs:[{selected:true,canSelected:1}]}]};
-    else if(params.name==='previewOrder')data={shopInfo:{deptId:store.id,deptName:store.name,address:store.address,longitude:store.longitude,latitude:store.latitude},productInfoList:[{...a.productList[0],name:'FAKE latte',additionDesc:'FAKE default specification'}],totalInitialPrice:this.price,privilegeMoney:0,discountPrice:this.price,couponCodeList:[...this.coupons]};
+    else if(params.name==='previewOrder'){if(this.beforePreview)await this.beforePreview();data={shopInfo:{deptId:store.id,deptName:store.name,address:store.address,longitude:store.longitude,latitude:store.latitude},productInfoList:[{...a.productList[0],name:'FAKE latte',additionDesc:'FAKE default specification'}],totalInitialPrice:this.price,privilegeMoney:0,discountPrice:this.price,couponCodeList:[...this.coupons]};}
     else if(params.name==='createOrder'){if(this.beforeCreate)await this.beforeCreate();if(this.createFailure)throw new Error('FAKE timeout after dispatch');data=this.created;}
     else if(params.name==='queryOrderDetailInfo')data=this.statusData;
     else throw new Error('Unexpected test tool');
@@ -57,7 +58,7 @@ test('preview calls only fake detail/preview MCP and carries exact quantity/spec
   expect(tx.state).toBe('AWAITING_CONFIRMATION');expect(tx.preview?.finalCents).toBe(2000);expect(tx.preview?.coupon_count).toBe(1);
   expect(client.calls.map(call=>call.name)).toEqual(['queryProductDetailInfo','previewOrder']);expect(client.creationCalls.length).toBe(0);
   expect(tx.history.map(item=>item.state)).toEqual(['SELECTED','PREVIEWED','AWAITING_CONFIRMATION']);
-  await expect(service.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow('disabled');expect(client.creationCalls.length).toBe(0);
+  await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow('disabled');expect(client.creationCalls.length).toBe(0);
 });
 test('real SDK creation is hard-disabled in the automated test process',async()=>{
   // No mock connection: proves the real SDK path stops before networking, regardless of merchant Token.
@@ -66,40 +67,40 @@ test('real SDK creation is hard-disabled in the automated test process',async()=
 });
 test('all immutable fields and explicit confirmation are required; another owner cannot submit',async()=>{
   const {client,service}=setup();const tx=await ready(service);
-  for(const alteration of [{confirmed:false},{store_confirmed:false},{intent:'AUTO'},{confirmation:'wrong'},{fingerprint:'wrong'},{store_id:43},{product_id:124},{sku:'wrong'},{quantity:2},{final_cents:1}])await expect(service.submit('owner',tx.transaction_id,{...input(tx),...alteration})).rejects.toThrow();
-  await expect(service.submit('other',tx.transaction_id,input(tx))).rejects.toThrow('Unknown');expect(client.creationCalls.length).toBe(0);
+  for(const alteration of [{confirmed:false},{store_confirmed:false},{intent:'AUTO'},{confirmation:'wrong'},{fingerprint:'wrong'},{store_id:43},{product_id:124},{sku:'wrong'},{quantity:2},{final_cents:1}])await expect(service.submit('owner',tx.transaction_id,{...input(tx),...alteration},store)).rejects.toThrow();
+  await expect(service.submit('other',tx.transaction_id,input(tx),store)).rejects.toThrow('Unknown');expect(client.creationCalls.length).toBe(0);
 });
 test('fake successful submission uses exact preview parameters/coupons and verifies status',async()=>{
-  const {client,service}=setup();const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx));
+  const {client,service}=setup();const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx),store);
   expect(result.state).toBe('PAID');expect(result.order_id).toBe('FAKE_ORDER');expect(client.creationCalls.length).toBe(1);
   expect(client.creationCalls[0]?.arguments).toEqual({deptId:42,productList:[{productId:123,skuCode:'FAKE-SKU',amount:1}],longitude:121,latitude:31,couponCodeList:['FAKE-COUPON']});
   expect(client.calls.at(-1)?.name).toBe('queryOrderDetailInfo');
-  await expect(service.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow();expect(client.creationCalls.length).toBe(1);
+  await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();expect(client.creationCalls.length).toBe(1);
 });
 test('concurrent confirmation dispatches only one fake create call',async()=>{
   const {client,service}=setup();const tx=await ready(service);
   let release!:()=>void;client.beforeCreate=()=>new Promise<void>(resolve=>{release=resolve});
-  const first=service.submit('owner',tx.transaction_id,input(tx));
-  await expect(service.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow();
+  const first=service.submit('owner',tx.transaction_id,input(tx),store);
+  await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();
   while(!release)await new Promise(resolve=>setTimeout(resolve,1));release();await first;expect(client.creationCalls.length).toBe(1);
 });
 test('changed quote or coupons expire confirmation before any create dispatch',async()=>{
-  for(const change of ['price','coupons']){const {client,service}=setup();const tx=await ready(service);if(change==='price')client.price=21;else client.coupons=['OTHER-FAKE'];const result=await service.submit('owner',tx.transaction_id,input(tx));expect(result.state).toBe('EXPIRED');expect(client.creationCalls.length).toBe(0);}
+  for(const change of ['price','coupons']){const {client,service}=setup();const tx=await ready(service);if(change==='price')client.price=21;else client.coupons=['OTHER-FAKE'];const result=await service.submit('owner',tx.transaction_id,input(tx),store);expect(result.state).toBe('EXPIRED');expect(client.creationCalls.length).toBe(0);}
 });
 test('expired confirmation never reaches merchant create',async()=>{
   let time=Date.now();const {client,service}=setup(true,new MemoryJournal(),()=>time);const tx=await ready(service);time+=61_000;
-  await expect(service.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow();expect(service.public('owner',tx.transaction_id).state).toBe('EXPIRED');expect(client.creationCalls.length).toBe(0);
+  await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();expect(service.public('owner',tx.transaction_id).state).toBe('EXPIRED');expect(client.creationCalls.length).toBe(0);
 });
 test('timeout or ambiguous response is UNKNOWN and never auto-retried',async()=>{
-  for(const failure of ['timeout','shape']){const {client,service}=setup();const tx=await ready(service);if(failure==='timeout')client.createFailure=true;else client.created={unrecognized:'response'};const result=await service.submit('owner',tx.transaction_id,input(tx));expect(result.state).toBe('UNKNOWN');await expect(service.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow();expect(client.creationCalls.length).toBe(1);}
+  for(const failure of ['timeout','shape']){const {client,service}=setup();const tx=await ready(service);if(failure==='timeout')client.createFailure=true;else client.created={unrecognized:'response'};const result=await service.submit('owner',tx.transaction_id,input(tx),store);expect(result.state).toBe('UNKNOWN');await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();expect(client.creationCalls.length).toBe(1);}
 });
 test('unknown payment fields cannot assert PAID, even after order creation',async()=>{
   const {client,gateway,journal}=setup();client.statusData={status:999,__verifiedPaymentState:'PAID'};
-  const service=new CheckoutService(gateway,journal,true);const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx));expect(result.state).toBe('UNKNOWN');expect(result.payment_url).toBe('https://example.invalid/qr.png');
+  const service=new CheckoutService(gateway,journal,true);const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx),store);expect(result.state).toBe('UNKNOWN');expect(result.payment_url).toBeUndefined();
 });
 test('persistent SUBMITTING recovery becomes UNKNOWN without a new create call',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'agentmall-journal-'));
-  try{const journal=new FileJournal(dir);const {service,adapter,client}=setup(true,journal);const tx=await ready(service);const record=journal.load()[0]!;record.state='SUBMITTING';journal.save(record);const restored=new CheckoutService(adapter,new FileJournal(dir),true);expect(restored.public('owner',tx.transaction_id).state).toBe('UNKNOWN');expect(client.creationCalls.length).toBe(0);await expect(restored.submit('owner',tx.transaction_id,input(tx))).rejects.toThrow();}finally{rmSync(dir,{recursive:true,force:true});}
+  try{const journal=new FileJournal(dir);const {service,adapter,client}=setup(true,journal);const tx=await ready(service);const record=journal.load()[0]!;record.state='SUBMITTING';journal.save(record);const restored=new CheckoutService(adapter,new FileJournal(dir),true);expect(restored.public('owner',tx.transaction_id).state).toBe('UNKNOWN');expect(client.creationCalls.length).toBe(0);await expect(restored.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();}finally{rmSync(dir,{recursive:true,force:true});}
 });
 test('browser bootstrap is one-use, signed cookie and Origin/CSRF are required',async()=>{
   const gate=new BrowserGate('http://127.0.0.1:4400',undefined,'FAKE_BOOTSTRAP');
@@ -128,7 +129,7 @@ test('authorized fake HTTP flow goes through OCP Query/Resolve; missing store co
 
 
 test('unknown submission prevents a fresh browser session from starting a duplicate order',async()=>{
-  const {client,service}=setup();const tx=await ready(service);client.createFailure=true;await service.submit('owner',tx.transaction_id,input(tx));
+  const {client,service}=setup();const tx=await ready(service);client.createFailure=true;await service.submit('owner',tx.transaction_id,input(tx),store);
   expect(()=>service.select('new-browser-owner',selection)).toThrow('unresolved');expect(client.creationCalls.length).toBe(1);
 });
 
@@ -141,5 +142,43 @@ test('shared real SDK boundary rejects creation and cancellation in automated te
 
 
 test('a returned creation price change is exposed without automatic payment or cancellation',async()=>{
-  const {client,gateway,journal}=setup();client.created.discountPrice=25;const service=new CheckoutService(gateway,journal,true);const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx));expect(result.created_final_cents).toBe(2500);expect(result.price_changed).toBe(true);expect(client.creationCalls.length).toBe(1);expect(client.calls.some(call=>call.name==='cancelOrder')).toBe(false);
+  const {client,gateway,journal}=setup();client.created.discountPrice=25;const service=new CheckoutService(gateway,journal,true);const tx=await ready(service);const result=await service.submit('owner',tx.transaction_id,input(tx),store);expect(result.created_final_cents).toBe(2500);expect(result.price_changed).toBe(true);expect(client.creationCalls.length).toBe(1);expect(client.calls.some(call=>call.name==='cancelOrder')).toBe(false);
+});
+
+
+import { verifiedPaymentUrl } from './real-checkout';
+test('store change invalidates the old quote and confirmation credential',async()=>{
+  const {client,service,journal}=setup();const tx=await ready(service);service.invalidateStoreContext('owner');
+  const stale=service.public('owner',tx.transaction_id);expect(stale.state).toBe('EXPIRED');expect(stale.preview).toBeUndefined();expect(stale.fingerprint).toBeUndefined();expect(journal.load()[0]?.confirmHash).toBeUndefined();
+  await expect(service.submit('owner',tx.transaction_id,input(tx),store)).rejects.toThrow();expect(client.creationCalls.length).toBe(0);
+});
+test('submit requires the session current confirmed store including its address',async()=>{
+  for(const current of [undefined,{...store,id:43},{...store,address:'CHANGED ADDRESS'}]){const {client,service}=setup();const tx=await ready(service);await expect(service.submit('owner',tx.transaction_id,input(tx),current)).rejects.toThrow('confirmed store');expect(service.public('owner',tx.transaction_id).state).toBe('EXPIRED');expect(client.creationCalls.length).toBe(0);}
+});
+test('a late merchant preview cannot restore credentials after store invalidation',async()=>{
+  const {client,service,journal}=setup();const tx=service.select('owner',selection);let release!:()=>void;client.beforePreview=()=>new Promise<void>(resolve=>{release=resolve});
+  const pending=service.preview('owner',tx.transaction_id,1);while(!release)await new Promise(resolve=>setTimeout(resolve,1));service.invalidateStoreContext('owner');release();
+  await expect(pending).rejects.toThrow('discarded');expect(service.public('owner',tx.transaction_id).state).toBe('EXPIRED');expect(journal.load()[0]?.confirmHash).toBeUndefined();expect(client.creationCalls.length).toBe(0);
+});
+test('unresolved transactions block store changes for current and new sessions',async()=>{
+  for(const state of ['SUBMITTING','UNKNOWN','ORDER_CREATED','PAYMENT_PENDING'] as const){const {service,adapter,journal,client}=setup();await ready(service);const saved=journal.load()[0]!;saved.state=state;journal.save(saved);const recovered=new CheckoutService(adapter,journal,true);expect(()=>recovered.invalidateStoreContext('owner')).toThrow('blocked');expect(()=>recovered.invalidateStoreContext('new-owner')).toThrow('blocked');expect(client.creationCalls.length).toBe(0);}
+});
+test('HTTP store query/reset/reconfirmation invalidate a previous browser preview',async()=>{
+  for(const action of ['query','reset','confirm','invalid-query']){
+    const {gateway,adapter,journal,client}=setup();const gate=new BrowserGate('http://127.0.0.1:4400',undefined,'FAKE_BOOTSTRAP');const routes=new RealRoutes(gate,gateway,adapter,journal,true);installRealRoutes(routes);
+    const login=await handle(new Request('http://127.0.0.1:4400/api/session/login',{method:'POST',headers:{origin:'http://127.0.0.1:4400','content-type':'application/json'},body:JSON.stringify({bootstrap:'FAKE_BOOTSTRAP'})}));const auth=await login.json() as any;const cookie=login.headers.get('set-cookie')!.split(';')[0]!;
+    const request=(path:string,body:unknown)=>new Request('http://127.0.0.1:4400'+path,{method:'POST',headers:{origin:'http://127.0.0.1:4400',cookie,'x-csrf-token':auth.csrf,'content-type':'application/json'},body:JSON.stringify(body)});
+    const post=(path:string,body:unknown)=>handle(request(path,body));
+    await post('/api/luckin/stores',{longitude:121,latitude:31});await post('/api/luckin/store/select',{store_id:42,confirmed:true});const owner=gate.session(request('/api/session',{})).owner;const tx=await ready(routes.checkout,owner);
+    if(action==='invalid-query')expect((await post('/api/luckin/stores',{})).status).toBe(400);
+    if(action==='query')expect((await post('/api/luckin/stores',{longitude:122,latitude:32})).status).toBe(200);
+    if(action==='reset')expect((await post('/api/luckin/store/reset',{})).status).toBe(200);
+    if(action==='confirm')expect((await post('/api/luckin/store/select',{store_id:42,confirmed:true})).status).toBe(200);
+    expect((await post('/api/luckin/transactions/'+tx.transaction_id+'/submit',input(tx))).status).toBe(409);expect(client.creationCalls.length).toBe(0);
+  }
+});
+test('payment URLs fail closed without verified exact merchant hosts',()=>{
+  for(const url of ['https://example.invalid/qr.png','https://lkcoffee.com.evil.invalid/pay','javascript:alert(1)','http://pay.example.test/qr','https://u:p@pay.example.test/qr','https://pay.example.test:444/qr'])expect(verifiedPaymentUrl(url)).toBeUndefined();
+  expect(verifiedPaymentUrl('https://pay.example.test/qr?id=123',['pay.example.test'])).toBe('https://pay.example.test/qr?id=123');
+  for(const url of ['https://pay.example.test.evil.invalid/qr','https://sub.pay.example.test/qr','https://pay.example.test:444/qr','https://u:p@pay.example.test/qr'])expect(verifiedPaymentUrl(url,['pay.example.test'])).toBeUndefined();
 });
