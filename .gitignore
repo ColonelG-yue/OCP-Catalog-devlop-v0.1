@@ -38,3 +38,6 @@ ocp-skill-gateway-deploy-*.zip
 # Python bytecode / caches from ad-hoc import scripts
 __pycache__/
 *.pyc
+
+# Private local checkout/session journal
+apps/agentmall-dining/.agentmall-state/

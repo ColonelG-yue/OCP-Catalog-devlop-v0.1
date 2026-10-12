@@ -1,0 +1,1106 @@
+{
+  "checked_at": "2026-10-11T07:29:09.353Z",
+  "tools": [
+    {
+      "name": "query-order",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "description": "No comments found.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      }
+    },
+    {
+      "name": "query-my-prizes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pageNum": {
+            "description": "页码，默认第1页",
+            "type": "string"
+          },
+          "pageSize": {
+            "description": "每页条数，默认10条，最大50条",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "mall-create-order",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "description": "配送地址ID，spuCategory=\"2\"时必填",
+            "type": "string"
+          },
+          "count": {
+            "description": "兑换数量",
+            "type": "integer"
+          },
+          "skuId": {
+            "description": "商品SKU ID，需要从查询可兑换餐品券列表或查询商品详情中获取",
+            "type": "integer"
+          },
+          "spuCategory": {
+            "description": "类目，商品类别，\"1\"虚拟商品, \"2\"实体物品，需要从查询可兑换餐品券列表或查询商品详情中获取",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skuId",
+          "spuCategory"
+        ]
+      }
+    },
+    {
+      "name": "query-party-store-date",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spuId": {
+            "description": "spuId",
+            "type": "number"
+          },
+          "storeCode": {
+            "description": "门店code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spuId",
+          "storeCode"
+        ]
+      }
+    },
+    {
+      "name": "delivery-create-address",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "description": "配送地址",
+            "type": "string"
+          },
+          "addressDetail": {
+            "description": "配送地址门牌号",
+            "type": "string"
+          },
+          "city": {
+            "description": "城市",
+            "type": "string"
+          },
+          "contactName": {
+            "description": "联系人姓名",
+            "type": "string"
+          },
+          "gender": {
+            "description": "性别",
+            "type": "string"
+          },
+          "phone": {
+            "description": "要求为11位纯数字",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "addressDetail",
+          "city",
+          "contactName",
+          "phone"
+        ]
+      }
+    },
+    {
+      "name": "query-meal-detail",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，从query-nearby-stores或delivery-query-stores返回结果中获取。得来速(beType=5)/外送(orderType=2)/团餐场景必传，到店自取(beType=1)场景不传",
+            "type": "string"
+          },
+          "beType": {
+            "description": "1-到店取餐，2-麦乐送到家，5-得来速(DT)，6-企业团餐",
+            "enum": [
+              1,
+              2,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "code": {
+            "description": "餐品唯一编码，快餐门店内唯一标识单个餐品的编码",
+            "type": "string"
+          },
+          "orderType": {
+            "description": "到店自提场景:orderType=1 && beCode 是个无效参数，不要传，传了会报错；外送场景:orderType=2 && beCode 为delivery-query-address中的beCode；得来速(DT)场景：orderType=1 && beCode 为query-nearby-store中的beCode",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式:yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storeCode",
+          "orderType",
+          "beType",
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "query-promotions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，团餐场景必传（从 delivery-query-stores 获取）",
+            "type": "string"
+          },
+          "beType": {
+            "description": "业务类型，固定传 6（企业团餐）",
+            "enum": [
+              6
+            ],
+            "type": "integer"
+          },
+          "orderType": {
+            "description": "订单类型，团餐场景固定传 2（外送）",
+            "enum": [
+              2
+            ],
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式:yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storeCode",
+          "orderType",
+          "beType"
+        ]
+      }
+    },
+    {
+      "name": "query-lottery-info",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "mall-product-detail",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spuId": {
+            "description": "商品SPU ID，需要从查询可兑换餐品券列表让用户选择一个spu才可以",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "spuId"
+        ]
+      }
+    },
+    {
+      "name": "query-meals",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，从query-nearby-stores或delivery-query-stores返回结果中获取。得来速(beType=5)/外送(orderType=2)/团餐场景必传，到店自取(beType=1)场景不传",
+            "type": "string"
+          },
+          "beType": {
+            "description": "1-到店取餐，2-麦乐送到家，5-得来速(DT)，6-企业团餐",
+            "enum": [
+              1,
+              2,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "orderType": {
+            "description": "订单类型，1-到店（含到店自取+得来速车道取餐），2-外送（含麦乐送+企业团餐）",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式:yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storeCode",
+          "orderType",
+          "beType"
+        ]
+      }
+    },
+    {
+      "name": "query-meal-assistance",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "BE编码（Business Entity Code）",
+            "type": "string"
+          },
+          "beType": {
+            "description": "固定传 6（企业团餐），此接口仅团餐场景使用",
+            "enum": [
+              6
+            ],
+            "type": "integer"
+          },
+          "orderType": {
+            "description": "到店自提场景: orderType=1 && beCode 是个无效参数，不要传，传了会报错\n外送场景: orderType=2 && beCode 为delivery-query-address中的beCode\n得来速(DT)场景：orderType=1 && beCode 为query-nearby-store中的beCode",
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约时间，仅当用户要预约下单时，该字段必传，格式形如 2020-08-08 09:30",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storeCode"
+        ]
+      }
+    },
+    {
+      "name": "mall-order-list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lastId": {
+            "description": "最后一个订单id",
+            "type": "number"
+          },
+          "size": {
+            "default": 10,
+            "description": "查询数量，默认10，超过10按10条查询",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "query-nearby-stores",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beType": {
+            "description": "beType必传，1：到店自提, 5-得来速车道取餐(Drive Through)",
+            "enum": [
+              1,
+              5
+            ],
+            "type": "integer"
+          },
+          "city": {
+            "description": "城市名",
+            "type": "string"
+          },
+          "keyword": {
+            "description": "关键词",
+            "type": "string"
+          },
+          "searchType": {
+            "default": 1,
+            "description": "searchType=2 按位置进行搜索， searchType=1 搜索收藏餐厅，默认searchType=1",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "beType",
+          "searchType"
+        ]
+      }
+    },
+    {
+      "name": "cancel-order",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cancelReasonCode": {
+            "description": "取消原因code，默认为1",
+            "type": "string"
+          },
+          "orderId": {
+            "description": "订单号",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId",
+          "cancelReasonCode"
+        ]
+      }
+    },
+    {
+      "name": "query-party-store",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "城市code",
+            "type": "string"
+          },
+          "latitude": {
+            "description": "纬度，从 query-party-city 返回结果的 data[].latitude 获取",
+            "type": "number"
+          },
+          "longitude": {
+            "description": "经度，从 query-party-city 返回结果的 data[].longitude 获取",
+            "type": "number"
+          },
+          "spuId": {
+            "description": "spuId，从 mall-points-products 或 mall-product-detail 获取",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "campaign-calendar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "specifiedDate": {
+            "description": "可选的查询基准日期（格式：yyyy-MM-dd）；若传入，则以该日为锚点，返回当天及时间线上与其最邻近的前后各一个有活动的日子（共三天）；若不填，默认返回当前月所有活动",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "query-my-coupons",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "description": "页码，默认第1页，最多5页",
+            "type": "string"
+          },
+          "pageSize": {
+            "description": "每页条数，默认200条，最大200条",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "mall-points-products",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "catRuleIds": {
+            "description": "类目规则筛选，支持多选（逗号分隔），非必传，不传时默认查询所有类型。\n可选值：\n- 1>4: 商品券（非预付优惠券）\n- 2: 实物商品\n- 2>8: 周边产品\n- 2>9: 实物礼品卡\n- 1>6>20: 生日类派对\n- 1>6>21: 主题类派对\n- 1>6>22: 麦麦体验营\n- 1>6>25: 品鉴会\n- 1>6>34: 读书会\n- 1>6>40: 积分兑换活动\n示例：1>4,2\n",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "query-party-store-session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dateStr": {
+            "description": "门店日期",
+            "type": "string"
+          },
+          "spuId": {
+            "description": "spuId",
+            "type": "number"
+          },
+          "storeCode": {
+            "description": "门店code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spuId",
+          "storeCode",
+          "dateStr"
+        ]
+      }
+    },
+    {
+      "name": "query-store-coupons",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，从query-nearby-stores或delivery-query-stores返回结果中获取。得来速(beType=5)/外送(orderType=2)/团餐场景必传，到店自取(beType=1)场景不传",
+            "type": "string"
+          },
+          "beType": {
+            "description": "1-到店取餐，2-麦乐送到家，5-得来速(DT)，6-企业团餐",
+            "enum": [
+              1,
+              2,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "orderType": {
+            "description": "订单类型, 1-到店（含到店自取+得来速车道取餐），2-外送（含麦乐送+企业团餐）",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式 yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码必须全部由数字组成",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderType",
+          "beType",
+          "storeCode"
+        ]
+      }
+    },
+    {
+      "name": "delivery-query-stores",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "description": "地址ID，来源delivery-query-address",
+            "type": "string"
+          },
+          "beType": {
+            "description": "beType：2: 麦乐送，6：团餐",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "beType",
+          "addressId"
+        ]
+      }
+    },
+    {
+      "name": "order-list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "now-time-info",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "list-nutrition-foods",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "delivery-query-addresses",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "create-order",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "description": "配送地址id，外送or团餐的地址",
+            "type": "string"
+          },
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，从query-nearby-stores或delivery-query-stores返回结果中获取。得来速(beType=5)/外送(orderType=2)/团餐场景必传，到店自取(beType=1)场景不传",
+            "type": "string"
+          },
+          "beType": {
+            "description": "1-到店取餐，2-麦乐送到家，5-得来速(DT)，6-企业团餐",
+            "enum": [
+              1,
+              2,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "gmServiceCode": {
+            "description": "企业团餐场景(beType=6)下，必传，参数来自query-meal-assistance",
+            "type": "string"
+          },
+          "items": {
+            "description": "待价格计算的商品列表",
+            "items": {
+              "description": "",
+              "properties": {
+                "couponCode": {
+                  "description": "优惠券code",
+                  "type": "string"
+                },
+                "couponId": {
+                  "description": "优惠券Id",
+                  "type": "string"
+                },
+                "modification": {
+                  "description": "商品特制选项",
+                  "properties": {
+                    "values": {
+                      "description": "特制选项列表",
+                      "items": {
+                        "properties": {
+                          "code": {
+                            "description": "特制code",
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "特制key",
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "description": "特制数量",
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "productCode": {
+                  "description": "商品code",
+                  "type": "string"
+                },
+                "quantity": {
+                  "description": "数量",
+                  "type": "integer"
+                },
+                "roundList": {
+                  "description": "套餐子项",
+                  "items": {
+                    "properties": {
+                      "comboItemList": {
+                        "description": "套餐套餐round下商品",
+                        "items": {
+                          "properties": {
+                            "code": {
+                              "description": "商品编码",
+                              "type": "string"
+                            },
+                            "modification": {
+                              "description": "商品特制选项",
+                              "properties": {
+                                "values": {
+                                  "description": "特制选项列表",
+                                  "items": {
+                                    "properties": {
+                                      "code": {
+                                        "description": "特制code",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "description": "特制key",
+                                        "type": "string"
+                                      },
+                                      "quantity": {
+                                        "description": "特制数量",
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "quantity": {
+                              "description": "商品数量",
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "round": {
+                        "description": "套餐round",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "needTableware": {
+            "description": "是否需要餐具，true需要，false不需要",
+            "type": "boolean"
+          },
+          "orderType": {
+            "description": "订单类型，1-到店（含到店自取+得来速车道取餐），2-外送（含麦乐送+企业团餐）",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "remark": {
+            "description": "订单备注（选填，最多50字），如\"无接触配送\"，仅orderType=2场景下需要引导用户填写",
+            "type": "string"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式:yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          },
+          "takeWayCode": {
+            "description": "到店/得来速场景(orderType=1)必传，外送/团餐场景(orderType=2)不传。值从 calculate-price 返回的takeWayList[].code 中选取",
+            "type": "string"
+          },
+          "withOrder": {
+            "description": "随单购商品",
+            "properties": {
+              "cardId": {
+                "description": "随单购卡id",
+                "type": "string"
+              },
+              "cardType": {
+                "description": "随单购卡类型",
+                "type": "integer"
+              },
+              "membershipCode": {
+                "description": "随单购OMM code",
+                "type": "string"
+              },
+              "membershipSpecId": {
+                "description": "随单购OMM 规格id",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "storeCode",
+          "orderType",
+          "beType"
+        ]
+      }
+    },
+    {
+      "name": "calculate-price",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "beCode": {
+            "description": "业务编码，与storeCode 配对使用，从query-nearby-stores或delivery-query-stores返回结果中获取。得来速(beType=5)/外送(orderType=2)/团餐场景必传，到店自取(beType=1)场景不传",
+            "type": "string"
+          },
+          "beType": {
+            "description": "1-到店取餐，2-麦乐送到家，5-得来速(DT)，6-企业团餐",
+            "enum": [
+              1,
+              2,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "gmServiceCode": {
+            "description": "团餐-助餐服务码",
+            "type": "string"
+          },
+          "items": {
+            "description": "待价格计算的商品列表",
+            "items": {
+              "description": "",
+              "properties": {
+                "couponCode": {
+                  "description": "优惠券code",
+                  "type": "string"
+                },
+                "couponId": {
+                  "description": "优惠券Id",
+                  "type": "string"
+                },
+                "modification": {
+                  "description": "商品特制选项",
+                  "properties": {
+                    "values": {
+                      "description": "特制选项列表",
+                      "items": {
+                        "properties": {
+                          "code": {
+                            "description": "特制code",
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "特制key",
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "description": "特制数量",
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "productCode": {
+                  "description": "商品code",
+                  "type": "string"
+                },
+                "quantity": {
+                  "description": "数量，必填，不能为空，且大于等于1",
+                  "type": "integer"
+                },
+                "roundList": {
+                  "description": "套餐子项",
+                  "items": {
+                    "properties": {
+                      "comboItemList": {
+                        "description": "套餐套餐round下商品",
+                        "items": {
+                          "properties": {
+                            "code": {
+                              "description": "商品编码",
+                              "type": "string"
+                            },
+                            "modification": {
+                              "description": "商品特制选项",
+                              "properties": {
+                                "values": {
+                                  "description": "特制选项列表",
+                                  "items": {
+                                    "properties": {
+                                      "code": {
+                                        "description": "特制code",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "description": "特制key",
+                                        "type": "string"
+                                      },
+                                      "quantity": {
+                                        "description": "特制数量",
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "quantity": {
+                              "description": "商品数量",
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "round": {
+                        "description": "套餐round",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "needTableware": {
+            "description": "是否需要餐具，true需要，false不需要",
+            "type": "boolean"
+          },
+          "orderType": {
+            "description": "订单类型，1-到店（含到店自取+得来速车道取餐），2-外送（含麦乐送+企业团餐）",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "reservationDate": {
+            "description": "预约场景必传，非预约场景不传。格式:yyyy-MM-dd HH:mm",
+            "type": "string"
+          },
+          "storeCode": {
+            "description": "门店编码（storeCode）, 不能为空",
+            "type": "string"
+          },
+          "withOrder": {
+            "description": "随单购商品",
+            "properties": {
+              "cardId": {
+                "description": "随单购卡id",
+                "type": "string"
+              },
+              "cardType": {
+                "description": "随单购卡类型",
+                "type": "integer"
+              },
+              "membershipCode": {
+                "description": "随单购会员code",
+                "type": "string"
+              },
+              "membershipSpecId": {
+                "description": "随单购规格id",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "storeCode",
+          "orderType",
+          "beType"
+        ]
+      }
+    },
+    {
+      "name": "query-survey-coupon",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "description": "订单号。必填。类型为字符串，仅允许字母、数字、下划线和连字符，最长 64 位，格式示例：1030108270000795607354880945。数据来源为用户明确提供的订单号或上游订单查询工具返回的订单号；Agent 不要自行编造或改写该值。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      }
+    },
+    {
+      "name": "query-my-account",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "query-party-city",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spuId": {
+            "description": "spuId",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spuId"
+        ]
+      }
+    },
+    {
+      "name": "auto-bind-coupons",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "draw-lottery",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "mall-order-detail",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "description": "订单号",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      }
+    },
+    {
+      "name": "party-order-create",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "城市code",
+            "type": "string"
+          },
+          "count": {
+            "description": "count",
+            "type": "integer"
+          },
+          "dateStr": {
+            "description": "店铺日期",
+            "type": "string"
+          },
+          "id": {
+            "description": "场次Id",
+            "type": "number"
+          },
+          "leftNum": {
+            "description": "场次余位",
+            "type": "integer"
+          },
+          "partyTimeInfo": {
+            "description": "场次信息",
+            "properties": {
+              "id": {
+                "description": "场次id",
+                "type": "number"
+              },
+              "leftNum": {
+                "description": "场次剩余余位",
+                "type": "integer"
+              },
+              "partyMax": {
+                "description": "场次最大成团人数",
+                "type": "integer"
+              },
+              "partyMin": {
+                "description": "场次最小成团人数",
+                "type": "integer"
+              },
+              "price": {
+                "description": "价格",
+                "type": "integer"
+              },
+              "timeEnd": {
+                "description": "场次结束时间",
+                "type": "string"
+              },
+              "timeStart": {
+                "description": "场次开始时间",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "partyType": {
+            "description": "派对类型，1-包场，2-拼团",
+            "type": "integer"
+          },
+          "skuId": {
+            "description": "skuId",
+            "type": "number"
+          },
+          "spuId": {
+            "description": "spuId",
+            "type": "number"
+          },
+          "storeCode": {
+            "description": "门店",
+            "type": "string"
+          },
+          "timeEnd": {
+            "description": "场次结束时间",
+            "type": "string"
+          },
+          "timeStart": {
+            "description": "场次开始时间",
+            "type": "string"
+          }
+        },
+        "required": [
+          "partyType"
+        ]
+      }
+    },
+    {
+      "name": "available-coupons",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-10-11T11:56:49.708Z",
+  "purpose": "READ_ONLY_PREVIEW_EVIDENCE",
+  "user_pickup_store_approved": false,
+  "creation_enabled": false,
+  "order_created": false,
+  "store": {
+    "id": 619779,
+    "name": "密渡桥路店",
+    "address": "拱墅区米市巷街道密渡桥路3号1幢106室",
+    "longitude": 120.158713,
+    "latitude": 30.274988
+  },
+  "product": "生椰拿铁（原创）",
+  "specification": "大杯/冰/意式拼配/默认浓度/不另外加糖/无奶油",
+  "line": {
+    "productId": 1262,
+    "skuCode": "SP2077-01134",
+    "amount": 1
+  },
+  "total_cents": 2000,
+  "discount_cents": 0,
+  "final_cents": 2000,
+  "coupon_count": 0
+}

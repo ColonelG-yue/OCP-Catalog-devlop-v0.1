@@ -1,0 +1,32 @@
+{
+  "checked_at": "2026-10-11T07:29:08.936Z",
+  "merchant": "luckin",
+  "status": "LIVE_READ_VERIFIED",
+  "product_count": 2,
+  "examples": [
+    {
+      "id": "603072-1262-SP2077-01134",
+      "title": "生椰拿铁（原创）",
+      "amount": 20,
+      "currency": "CNY",
+      "store": {
+        "id": "603072",
+        "name": "滨绿大厦A座负一楼店"
+      },
+      "price_basis": "estimatePrice",
+      "retrieved_at": "2026-10-11T07:29:08.936Z"
+    },
+    {
+      "id": "603072-5328-SP3748-00102",
+      "title": "冰吸生椰拿铁（原创）",
+      "amount": 21,
+      "currency": "CNY",
+      "store": {
+        "id": "603072",
+        "name": "滨绿大厦A座负一楼店"
+      },
+      "price_basis": "estimatePrice",
+      "retrieved_at": "2026-10-11T07:29:08.936Z"
+    }
+  ]
+}
